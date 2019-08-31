@@ -1,5 +1,8 @@
 var app = {}; // Общий контейнер
-
+// Состояния
+app.States = {
+    game: 0,
+};
 
 // Приложение
 var Application = (function () {
@@ -103,6 +106,7 @@ app.Game = (function () {
             height: $(document).height(),
             images: {},
             frames: {}, // хранение текущего кадра
+            cache: {}, // кэш для спрайтов
         },
 
         sprites = {
@@ -118,19 +122,38 @@ app.Game = (function () {
         },
 
         settings = {
-
+            states: {
+                PLAYING: 1,
+                STOP: 2,
+            },
+            N: 0,
+            UPDATE_TIMEOUT: 50,
         };
 
     return {
         start: function (username, cb = false) {
             callback = cb;
 
+            this.setState(settings.states.PLAYING);
             this.add(TYPES.PLAYER, username);
 
             gameCanvas.width = canvas.width;
             gameCanvas.height = canvas.height;
 
-            this.updateScene();
+
+            setInterval(() => {
+                requestAnimationFrame(this.updateScene.bind(this));
+            }, settings.UPDATE_TIMEOUT);
+        },
+
+        // Установить состояния
+        setState: function(state) {
+            app.States.game = state;
+        },
+
+        // Получить состояние
+        getState: function() {
+            return app.States.game;
         },
 
         // Добавление объекта на сцену
@@ -149,6 +172,7 @@ app.Game = (function () {
 
         // Обновление сцены
         updateScene: function () {
+            if(this.getState() === settings.states.STOP) return;
 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -160,42 +184,97 @@ app.Game = (function () {
             // Отрисовка спрайта
             let draw = (objectType, animationType) => {
 
-                let sprite = canvas.images[objectType][animationType];
-                let spriteInfo = getSprite(objectType, animationType);
-
-                let topOffset = canvas.height - spriteInfo.dheight;
-
-                let dwidth = spriteInfo.width / (spriteInfo.height / spriteInfo.dheight);
+                let sprite = canvas.images[objectType][animationType],
+                    spriteInfo = getSprite(objectType, animationType),
+                    topOffset = canvas.height - spriteInfo.dheight,
+                    dwidth = spriteInfo.width / (spriteInfo.height / spriteInfo.dheight);
 
                 ctx.drawImage(sprite, 0, 0, spriteInfo.width, spriteInfo.height, 0, topOffset, dwidth, spriteInfo.dheight);
-
 
             };
 
             // Отрисовка игрока
             let drawPlayer = (x, y, type) => {
 
-                let sprite = getSprite(TYPES.PLAYER, type);
                 if(!canvas.images.hasOwnProperty(TYPES.PLAYER)) {
 
-                    let obj = {};
-                    obj[type] = {number: 1};
-                    canvas.frames[TYPES.PLAYER] = obj;
+                    canvas.frames[TYPES.PLAYER] = {};
+                    canvas.images[TYPES.PLAYER] = {};
 
-                    let number = obj[type].number;
-                    if(number < 10) number = "0" + number;
+                }
+                let playerFrames = canvas.frames[TYPES.PLAYER],
+                    playerImages = canvas.images[TYPES.PLAYER];
 
-                    let imageObj = {};
-                    imageObj[type] = new Image();
-                    imageObj[type].src = sprite.url + number + '.png';
-                    imageObj[type].onload = function() {
+                if(!playerImages.hasOwnProperty(type)) {
+
+                    playerFrames[type] = {number: 1};
+                    playerImages[type] = {};
+                }
+
+
+                let url = getSpriteUrl({
+                    objectType: TYPES.PLAYER,
+                    animationType: type,
+                    number: playerFrames[type].number
+                });
+
+                let spriteCache = getCacheSprite(url);
+                if(spriteCache) {
+
+                    draw(TYPES.PLAYER, type);
+
+                } else {
+                    spriteCache = new Image();
+                    spriteCache.src = url;
+                    spriteCache.onload = function() {
                         draw(TYPES.PLAYER, type);
                     };
 
-                    canvas.images[TYPES.PLAYER] = imageObj;
-
-
+                    setCacheSprite(url, spriteCache);
                 }
+
+                playerImages[type] = spriteCache;
+
+                nextImage(TYPES.PLAYER, type);
+            };
+
+            // Получение ссылки на спрайт
+            let nextImage = (objectType, animationType) => {
+
+                let frame = canvas.frames[objectType][animationType],
+                    sprite = getSprite(objectType, animationType);
+
+                if(frame.number >= sprite.count) {
+                    frame.number = 1;
+                    return;
+                }
+                frame.number++;
+
+            };
+
+            // Сохранить спрайт в кэш
+            let setCacheSprite = (url, value) => {
+                canvas.cache[url] = value;
+            };
+
+            // Получить спрайт из кэша
+            let getCacheSprite = (url) => {
+                if(canvas.cache.hasOwnProperty(url)) {
+                    return canvas.cache[url];
+                }
+                return false;
+            };
+
+            // Получение ссылки на спрайт
+            let getSpriteUrl = (arParams) => {
+                let sprite = getSprite(arParams.objectType, arParams.animationType),
+                    formatNumber = (n) => {
+                        if (n < 10) return "0" + n;
+                        return n;
+                    };
+                let url = sprite.url + formatNumber(arParams.number) + '.png';
+                return url;
+
             };
 
             // Обработка объектов сцены
@@ -209,7 +288,6 @@ app.Game = (function () {
 
                 if (isPlayer) drawPlayer(x, y, type);
             });
-
 
 
         },
@@ -242,7 +320,7 @@ function Player() {
         name = uname;
 
         return this;
-    }
+    };
     this.setAnimation = (x, y) => {
         animation.x = x;
         animation.y = y;
