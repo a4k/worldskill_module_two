@@ -224,9 +224,10 @@ app.Game = (function () {
 
         // Отрисовка спрайта
         draw: function(params) {
-            let topOffset = canvas.height - params.dheight;
+            let info = params.info;
+            let topOffset = canvas.height - info.dheight;
 
-            ctx.drawImage(params.sprite, 0, 0, params.width, params.height, params.x, topOffset, params.dwidth, params.dheight);
+            ctx.drawImage(info.sprite, 0, 0, info.width, info.height, params.x, topOffset, info.dwidth, info.dheight);
 
         },
 
@@ -251,60 +252,58 @@ app.SpriteManager = (function () {
 
         draw: function (params) {
 
-            let type = params.type,
-                object = params.objectType,
+            let animationType = params.animationType,
+                objectType = params.objectType,
                 _this = this;
 
-            if (!frames.hasOwnProperty(object)) {
-                frames[object] = {};
+            if (!frames.hasOwnProperty(objectType)) {
+                frames[objectType] = {};
             }
 
-            let objFrames = frames[object];
+            let objFrames = frames[objectType];
 
-            if (!objFrames.hasOwnProperty(type)) {
-                objFrames[type] = {
+            if (!objFrames.hasOwnProperty(animationType)) {
+                objFrames[animationType] = {
                     number: 1,
                 };
             }
 
             objFrames.X = params.x;
             objFrames.Y = params.y;
+            params.number = objFrames[animationType].number;
+            params.info = this.getSprite(params);
 
 
-            let url = this.getSpriteUrl({
-                objectType: object,
-                animationType: type,
-                number: objFrames[type].number,
-            });
+            let url = this.getSpriteUrl(params);
 
             let spriteCache = this.getCacheSprite(url);
             if (spriteCache) {
-                this.drawOnScene(object, type);
+                this.drawOnScene(params);
 
             } else {
                 spriteCache = new Image();
                 spriteCache.src = url;
                 spriteCache.onload = function () {
-                    _this.drawOnScene(object, type);
+                    _this.drawOnScene(params);
                 };
 
                 this.setCacheSprite(url, spriteCache);
             }
 
-            objFrames[type].image = spriteCache;
+            objFrames[animationType].image = spriteCache;
 
-            this.nextImage(object, type);
+            this.nextImage(params);
         },
 
         // Получение ссылки на спрайт
         getSpriteUrl: function(arParams) {
-            let sprite = this.getSprite(arParams.objectType, arParams.animationType);
+            let sprite = this.getSprite(arParams);
             return sprite.url + arParams.number + '.png';
         },
 
         // Получение спрайта
-        getSprite: function (objectType, animationType) {
-            return SPRITES[objectType][animationType];
+        getSprite: function (params) {
+            return SPRITES[params.objectType][params.animationType];
         },
 
         // Получить спрайт из кэша
@@ -316,25 +315,18 @@ app.SpriteManager = (function () {
         },
 
         // Отрисовать на сцене
-        drawOnScene: function(objectType, animationType) {
-            if (callback) {
-                let sprite = frames[objectType][animationType].image,
-                    spriteInfo = this.getSprite(objectType, animationType),
-                    position = this.getPosition(objectType),
-                    dwidth = spriteInfo.width / (spriteInfo.height / spriteInfo.dheight);
+        drawOnScene: function(params) {
 
-                let params = {
-                    sprite: sprite,
-                    width: spriteInfo.width,
-                    height: spriteInfo.height,
-                    x: position.x,
-                    y: position.y,
-                    dwidth: dwidth,
-                    dheight: spriteInfo.dheight,
-                };
+            let spriteInfo = params.info;
 
-                callback(NAMES.DRAW_SPRITE, params);
-            }
+            params.info.sprite = this.getCacheImage(params);
+            params.info.dwidth = spriteInfo.width / (spriteInfo.height / spriteInfo.dheight);
+
+            callback(NAMES.DRAW_SPRITE, params);
+        },
+
+        getCacheImage: function(params) {
+            return frames[params.objectType][params.animationType].image;
         },
 
         // Получение координат объекта
@@ -352,10 +344,10 @@ app.SpriteManager = (function () {
         },
 
         // Получение ссылки на спрайт
-        nextImage: function(objectType, animationType) {
+        nextImage: function(params) {
 
-            let frame = frames[objectType][animationType],
-                sprite = this.getSprite(objectType, animationType);
+            let frame = frames[params.objectType][params.animationType],
+                sprite = this.getSprite(params);
 
             if (frame.number >= sprite.count) {
                 frame.number = 1;
@@ -375,7 +367,7 @@ function Player() {
         animation = {
             x: 0,
             y: 0,
-            type: 'idle',
+            animationType: NAMES.PLAYER_IDLE,
             side: NAMES.RIGHT_SIDE,
         },
         mover = {},
@@ -409,14 +401,14 @@ function Player() {
     this.onCallback = (key, value) => {
         switch (key) {
             case NAMES.MOVE:
-                animation.type = NAMES.PLAYER_RUN;
+                animation.animationType = NAMES.PLAYER_RUN;
                 settings.x = value.x;
                 break;
             case NAMES.CHANGE_SIDE:
                 animation.side = value;
                 break;
             case NAMES.MOVE_END:
-                animation.type = NAMES.PLAYER_IDLE;
+                animation.animationType = NAMES.PLAYER_IDLE;
                 break;
         }
     }
@@ -466,16 +458,16 @@ function PlayerMove() {
             }
         },
         moveLeft: function () {
+            callback(NAMES.CHANGE_SIDE, NAMES.LEFT_SIDE);
             this.move(settings.speed * -1)
         },
         moveRight: function () {
+            callback(NAMES.CHANGE_SIDE, NAMES.RIGHT_SIDE);
             this.move(settings.speed * 1)
         },
         move: function (distance) {
-            if (callback) {
-                settings.x += distance;
-                callback(NAMES.MOVE, {x: settings.x, y: settings.y});
-            }
+            settings.x += distance;
+            callback(NAMES.MOVE, {x: settings.x, y: settings.y});
         },
     }
 }
