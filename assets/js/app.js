@@ -116,14 +116,14 @@ app.Game = (function () {
         sprites = {
             player: {
                 idle: {
-                    url: '/animation/knight/sprites/idle/idle00',
+                    url: '/animation/knight/idle/idle00',
                     count: 18,
                     width: 1068,
                     height: 1265,
                     dheight: 355,
                 },
                 run: {
-                    url: '/animation/knight/sprites/run/run00',
+                    url: '/animation/knight/run/run00',
                     count: 17,
                     width: 1372,
                     height: 1347,
