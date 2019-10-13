@@ -1,8 +1,47 @@
-var app = {}; // Общий контейнер
+var app = {}; // Common container
+
 // Состояния
 app.States = {
     game: 0,
 };
+
+const NAMES = {
+    LEFT_SIDE: 'left_side',
+    RIGHT_SIDE: 'right_side',
+
+    PLAYER: 'player',
+    ENEMY: 'enemy',
+
+    // animation
+    PLAYER_IDLE: 'idle',
+    PLAYER_RUN: 'run',
+
+    // callback
+    MOVE: 'MOVE',
+    MOVE_END: 'MOVE_END',
+    CHANGE_SIDE: 'CHANGE_SIDE',
+    DRAW_SPRITE: 'DRAW_SPRITE',
+};
+
+const SPRITES = {
+    player: {
+        idle: {
+            url: '/animation/knight/idle/idle00',
+            count: 18,
+            width: 1068,
+            height: 1265,
+            dheight: 355,
+        },
+        run: {
+            url: '/animation/knight/run/run00',
+            count: 17,
+            width: 1372,
+            height: 1347,
+            dheight: 355,
+        },
+    }
+};
+
 
 // Приложение
 var Application = (function () {
@@ -36,7 +75,7 @@ var Application = (function () {
 
         },
 
-        switchTab: function(tabName) {
+        switchTab: function (tabName) {
             container.find('.screen').removeClass(ClassName.SHOW);
 
             let tabs = {
@@ -63,18 +102,18 @@ app.Register = (function () {
             this.testData();
         },
 
-        testData: function() {
+        testData: function () {
             input.val('sdf');
 
             container.trigger('submit');
         },
 
-        onSubmitForm: function(e) {
+        onSubmitForm: function (e) {
             e.preventDefault();
 
             let username = input.val();
 
-            if(callback) {
+            if (callback) {
                 callback(username);
             }
 
@@ -84,23 +123,11 @@ app.Register = (function () {
     };
 }());
 
-const ANIMATION = {
-    IDLE: 'idle',
-    RUN: 'run',
-};
-
 // Игра
 app.Game = (function () {
 
-    let container = $('#game'),
-
-        callback = false,
+    let callback = false,
         objects = [],
-
-        TYPES = {
-            PLAYER: 'player',
-            ENEMY: 'enemy',
-        },
 
         gameCanvas = document.getElementById('game-canvas'),
         ctx = gameCanvas.getContext('2d'),
@@ -111,25 +138,6 @@ app.Game = (function () {
             images: {},
             frames: {}, // хранение текущего кадра
             cache: {}, // кэш для спрайтов
-        },
-
-        sprites = {
-            player: {
-                idle: {
-                    url: '/animation/knight/idle/idle00',
-                    count: 18,
-                    width: 1068,
-                    height: 1265,
-                    dheight: 355,
-                },
-                run: {
-                    url: '/animation/knight/run/run00',
-                    count: 17,
-                    width: 1372,
-                    height: 1347,
-                    dheight: 355,
-                },
-            }
         },
 
         settings = {
@@ -146,11 +154,12 @@ app.Game = (function () {
             callback = cb;
 
             this.setState(settings.states.PLAYING);
-            this.add(TYPES.PLAYER, username);
+            this.add(NAMES.PLAYER, username);
 
             gameCanvas.width = canvas.width;
             gameCanvas.height = canvas.height;
 
+            app.SpriteManager.init(this.onCallback.bind(this));
 
             setInterval(() => {
                 requestAnimationFrame(this.updateScene.bind(this));
@@ -158,12 +167,12 @@ app.Game = (function () {
         },
 
         // Установить состояния
-        setState: function(state) {
+        setState: function (state) {
             app.States.game = state;
         },
 
         // Получить состояние
-        getState: function() {
+        getState: function () {
             return app.States.game;
         },
 
@@ -171,148 +180,53 @@ app.Game = (function () {
         add: function (type, name) {
 
             switch (type) {
-                case TYPES.PLAYER:
+                case NAMES.PLAYER:
                     let player = new Player().setName(name);
                     objects.push(player);
                     player.initMover();
                     break;
-                case TYPES.ENEMY:
+                case NAMES.ENEMY:
 
+                    break;
+            }
+        },
+
+        onCallback: function(key, value) {
+            switch (key) {
+                case NAMES.DRAW_SPRITE:
+                    this.draw(value);
                     break;
             }
         },
 
         // Обновление сцены
         updateScene: function () {
-            if(this.getState() === settings.states.STOP) return;
+            if (this.getState() === settings.states.STOP) return;
 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // Получение спрайта
-            let getSprite = (objectType, animationType) => {
-                 return sprites[objectType][animationType];
-            };
-            // Получение координат объекта
-            let getPosition = (objectType) => {
-                let pos = canvas.frames[objectType];
-                return {
-                    x: pos.X,
-                    y: pos.Y,
-                }
-            };
-
-            // Отрисовка спрайта
-            let draw = (objectType, animationType) => {
-
-                let sprite = canvas.images[objectType][animationType],
-                    spriteInfo = getSprite(objectType, animationType),
-                    position = getPosition(objectType),
-                    topOffset = canvas.height - spriteInfo.dheight,
-                    dwidth = spriteInfo.width / (spriteInfo.height / spriteInfo.dheight);
-
-                ctx.drawImage(sprite, 0, 0, spriteInfo.width, spriteInfo.height, position.x, topOffset, dwidth, spriteInfo.dheight);
-
-            };
-
-            // Отрисовка игрока
-            let drawPlayer = (x, y, type) => {
-
-                if(!canvas.images.hasOwnProperty(TYPES.PLAYER)) {
-
-                    canvas.frames[TYPES.PLAYER] = {};
-                    canvas.images[TYPES.PLAYER] = {};
-
-                }
-                let playerFrames = canvas.frames[TYPES.PLAYER],
-                    playerImages = canvas.images[TYPES.PLAYER];
-
-                if(!playerImages.hasOwnProperty(type)) {
-                    playerFrames[type] = {
-                        number: 1,
-                    };
-                }
-                playerFrames.X = x;
-                playerFrames.Y = y;
-
-
-                let url = getSpriteUrl({
-                    objectType: TYPES.PLAYER,
-                    animationType: type,
-                    number: playerFrames[type].number
-                });
-
-                let spriteCache = getCacheSprite(url);
-                if(spriteCache) {
-
-                    draw(TYPES.PLAYER, type);
-
-                } else {
-                    spriteCache = new Image();
-                    spriteCache.src = url;
-                    spriteCache.onload = function() {
-                        draw(TYPES.PLAYER, type);
-                    };
-
-                    setCacheSprite(url, spriteCache);
-                }
-
-                playerImages[type] = spriteCache;
-
-                nextImage(TYPES.PLAYER, type);
-            };
-
-            // Получение ссылки на спрайт
-            let nextImage = (objectType, animationType) => {
-
-                let frame = canvas.frames[objectType][animationType],
-                    sprite = getSprite(objectType, animationType);
-
-                if(frame.number >= sprite.count) {
-                    frame.number = 1;
-                    return;
-                }
-                frame.number++;
-
-            };
-
-            // Сохранить спрайт в кэш
-            let setCacheSprite = (url, value) => {
-                canvas.cache[url] = value;
-            };
-
-            // Получить спрайт из кэша
-            let getCacheSprite = (url) => {
-                if(canvas.cache.hasOwnProperty(url)) {
-                    return canvas.cache[url];
-                }
-                return false;
-            };
-
-            // Получение ссылки на спрайт
-            let getSpriteUrl = (arParams) => {
-                let sprite = getSprite(arParams.objectType, arParams.animationType),
-                    formatNumber = (n) => {
-                        if (n < 10) return "0" + n;
-                        return n;
-                    };
-                let url = sprite.url + formatNumber(arParams.number) + '.png';
-                return url;
-
-            };
 
             // Обработка объектов сцены
             objects.map(function (value, i) {
                 let isPlayer = value instanceof Player;
 
                 let animation = value.getAnimation(),
-                    position = value.getPosition(),
-                    x = position.x,
-                    y = position.y,
-                    type = animation.type;
+                    position = value.getPosition();
 
-                if (isPlayer) drawPlayer(x, y, type);
+                let params = $.extend({}, animation, position);
+                if (isPlayer) {
+                    params.objectType = NAMES.PLAYER;
+                }
+                app.SpriteManager.draw(params);
             });
 
+
+        },
+
+        // Отрисовка спрайта
+        draw: function(params) {
+            let topOffset = canvas.height - params.dheight;
+
+            ctx.drawImage(params.sprite, 0, 0, params.width, params.height, params.x, topOffset, params.dwidth, params.dheight);
 
         },
 
@@ -323,10 +237,142 @@ app.Game = (function () {
     };
 }());
 
-const CALLBACK = {
-    MOVE: 'MOVE',
-    MOVE_END: 'MOVE_END',
-};
+app.SpriteManager = (function () {
+    let callback = false,
+
+        images = {},
+        frames = {},
+        cache = {};
+
+    return {
+        init: function(cb) {
+            callback = cb;
+        },
+
+        draw: function (params) {
+
+            let type = params.type,
+                object = params.objectType,
+                _this = this;
+
+            if (!images.hasOwnProperty(object)) {
+                frames[object] = {};
+                images[object] = {};
+            }
+
+            let objFrames = frames[object],
+                objImages = images[object];
+
+            if (!objImages.hasOwnProperty(type)) {
+                objFrames[type] = {
+                    number: 1,
+                };
+            }
+
+            objFrames.X = params.x;
+            objFrames.Y = params.y;
+
+
+            let url = this.getSpriteUrl({
+                objectType: object,
+                animationType: type,
+                number: objFrames[type].number,
+            });
+
+            let spriteCache = this.getCacheSprite(url);
+            if (spriteCache) {
+                this.drawOnScene(object, type);
+
+            } else {
+                spriteCache = new Image();
+                spriteCache.src = url;
+                spriteCache.onload = function () {
+                    _this.drawOnScene(object, type);
+                };
+
+                this.setCacheSprite(url, spriteCache);
+            }
+
+            objImages[type] = spriteCache;
+
+            this.nextImage(object, type);
+        },
+
+        // Получение спрайта
+        getSprite: function (objectType, animationType) {
+            return SPRITES[objectType][animationType];
+        },
+
+        // Получение ссылки на спрайт
+        getSpriteUrl: function(arParams) {
+            let sprite = this.getSprite(arParams.objectType, arParams.animationType),
+                formatNumber = (n) => {
+                    if (n < 10) return "0" + n;
+                    return n;
+                };
+            return sprite.url + formatNumber(arParams.number) + '.png';
+
+        },
+
+        // Получить спрайт из кэша
+        getCacheSprite: function(url) {
+            if (cache.hasOwnProperty(url)) {
+                return cache[url];
+            }
+            return false;
+        },
+
+        // Отрисовать на сцене
+        drawOnScene: function(objectType, animationType) {
+            if (callback) {
+                let sprite = images[objectType][animationType],
+                    spriteInfo = this.getSprite(objectType, animationType),
+                    position = this.getPosition(objectType),
+                    dwidth = spriteInfo.width / (spriteInfo.height / spriteInfo.dheight);
+
+                let params = {
+                    sprite: sprite,
+                    width: spriteInfo.width,
+                    height: spriteInfo.height,
+                    x: position.x,
+                    y: position.y,
+                    dwidth: dwidth,
+                    dheight: spriteInfo.dheight,
+                };
+
+                callback(NAMES.DRAW_SPRITE, params);
+            }
+        },
+
+        // Получение координат объекта
+        getPosition: function(objectType) {
+            let object = frames[objectType];
+            return {
+                x: object.X,
+                y: object.Y,
+            }
+        },
+
+        // Сохранить спрайт в кэш
+        setCacheSprite: function(url, value) {
+            cache[url] = value;
+        },
+
+        // Получение ссылки на спрайт
+        nextImage: function(objectType, animationType) {
+
+            let frame = frames[objectType][animationType],
+                sprite = this.getSprite(objectType, animationType);
+
+            if (frame.number >= sprite.count) {
+                frame.number = 1;
+                return;
+            }
+            frame.number++;
+
+        },
+    }
+}());
 
 // Игрок
 function Player() {
@@ -337,6 +383,7 @@ function Player() {
             x: 0,
             y: 0,
             type: 'idle',
+            side: NAMES.RIGHT_SIDE,
         },
         mover = {},
 
@@ -364,16 +411,19 @@ function Player() {
     this.initMover = () => {
         mover = new PlayerMove();
         mover.setXY(settings.x, settings.y);
-        mover.init(this.onCallback);
+        mover.init(this.onCallback.bind(this));
     };
     this.onCallback = (key, value) => {
         switch (key) {
-            case CALLBACK.MOVE:
-                animation.type = ANIMATION.RUN;
+            case NAMES.MOVE:
+                animation.type = NAMES.PLAYER_RUN;
                 settings.x = value.x;
                 break;
-            case CALLBACK.MOVE_END:
-                animation.type = ANIMATION.IDLE;
+            case NAMES.CHANGE_SIDE:
+                animation.side = value;
+                break;
+            case NAMES.MOVE_END:
+                animation.type = NAMES.PLAYER_IDLE;
                 break;
         }
     }
@@ -392,22 +442,22 @@ function PlayerMove() {
         };
 
     return {
-        init: function(cb) {
+        init: function (cb) {
             callback = cb;
 
             $(document).on('keydown', this.onKeyDown.bind(this));
             $(document).on('keyup', this.onKeyUp.bind(this));
         },
-        setXY: function(x, y) {
+        setXY: function (x, y) {
             settings.x = x;
             settings.y = y;
         },
-        onKeyDown: function(e) {
+        onKeyDown: function (e) {
             let code = e.keyCode;
 
             console.log(code);
 
-            switch(code) {
+            switch (code) {
                 case KEY.LEFT:
                     this.moveLeft();
                     break;
@@ -416,23 +466,23 @@ function PlayerMove() {
                     break;
             }
         },
-        onKeyUp: function(e) {
+        onKeyUp: function (e) {
 
-            if(callback) {
-                callback(CALLBACK.MOVE_END, false);
+            if (callback) {
+                callback(NAMES.MOVE_END, false);
             }
         },
-        moveLeft: function() {
+        moveLeft: function () {
             this.move(settings.speed * -1)
         },
-        moveRight: function() {
+        moveRight: function () {
             this.move(settings.speed * 1)
         },
-        move: function(distance) {
-              if(callback) {
-                  settings.x += distance;
-                  callback(CALLBACK.MOVE, {x: settings.x, y: settings.y});
-              }
+        move: function (distance) {
+            if (callback) {
+                settings.x += distance;
+                callback(NAMES.MOVE, {x: settings.x, y: settings.y});
+            }
         },
     }
 }
