@@ -84,6 +84,10 @@ app.Register = (function () {
     };
 }());
 
+const ANIMATION = {
+    IDLE: 'idle',
+    RUN: 'run',
+};
 
 // Игра
 app.Game = (function () {
@@ -117,7 +121,14 @@ app.Game = (function () {
                     width: 1068,
                     height: 1265,
                     dheight: 355,
-                }
+                },
+                run: {
+                    url: '/animation/knight/sprites/run/run00',
+                    count: 17,
+                    width: 1372,
+                    height: 1347,
+                    dheight: 355,
+                },
             }
         },
 
@@ -163,6 +174,7 @@ app.Game = (function () {
                 case TYPES.PLAYER:
                     let player = new Player().setName(name);
                     objects.push(player);
+                    player.initMover();
                     break;
                 case TYPES.ENEMY:
 
@@ -180,16 +192,25 @@ app.Game = (function () {
             let getSprite = (objectType, animationType) => {
                  return sprites[objectType][animationType];
             };
+            // Получение координат объекта
+            let getPosition = (objectType) => {
+                let pos = canvas.frames[objectType];
+                return {
+                    x: pos.X,
+                    y: pos.Y,
+                }
+            };
 
             // Отрисовка спрайта
             let draw = (objectType, animationType) => {
 
                 let sprite = canvas.images[objectType][animationType],
                     spriteInfo = getSprite(objectType, animationType),
+                    position = getPosition(objectType),
                     topOffset = canvas.height - spriteInfo.dheight,
                     dwidth = spriteInfo.width / (spriteInfo.height / spriteInfo.dheight);
 
-                ctx.drawImage(sprite, 0, 0, spriteInfo.width, spriteInfo.height, 0, topOffset, dwidth, spriteInfo.dheight);
+                ctx.drawImage(sprite, 0, 0, spriteInfo.width, spriteInfo.height, position.x, topOffset, dwidth, spriteInfo.dheight);
 
             };
 
@@ -206,10 +227,12 @@ app.Game = (function () {
                     playerImages = canvas.images[TYPES.PLAYER];
 
                 if(!playerImages.hasOwnProperty(type)) {
-
-                    playerFrames[type] = {number: 1};
-                    playerImages[type] = {};
+                    playerFrames[type] = {
+                        number: 1,
+                    };
                 }
+                playerFrames.X = x;
+                playerFrames.Y = y;
 
 
                 let url = getSpriteUrl({
@@ -282,8 +305,9 @@ app.Game = (function () {
                 let isPlayer = value instanceof Player;
 
                 let animation = value.getAnimation(),
-                    x = animation.x,
-                    y = animation.y,
+                    position = value.getPosition(),
+                    x = position.x,
+                    y = position.y,
                     type = animation.type;
 
                 if (isPlayer) drawPlayer(x, y, type);
@@ -299,6 +323,11 @@ app.Game = (function () {
     };
 }());
 
+const CALLBACK = {
+    MOVE: 'MOVE',
+    MOVE_END: 'MOVE_END',
+};
+
 // Игрок
 function Player() {
 
@@ -309,6 +338,7 @@ function Player() {
             y: 0,
             type: 'idle',
         },
+        mover = {},
 
         settings = {
             x: 0,
@@ -321,12 +351,89 @@ function Player() {
 
         return this;
     };
-    this.setAnimation = (x, y) => {
-        animation.x = x;
-        animation.y = y;
+    this.setAnimation = (s) => {
+        animation = s;
     };
     this.getAnimation = () => {
-        return animation;
+        return Object.assign({}, animation);
+    };
+    this.getPosition = () => {
+        return {x: settings.x, y: settings.y};
+    };
+
+    this.initMover = () => {
+        mover = new PlayerMove();
+        mover.setXY(settings.x, settings.y);
+        mover.init(this.onCallback);
+    };
+    this.onCallback = (key, value) => {
+        switch (key) {
+            case CALLBACK.MOVE:
+                animation.type = ANIMATION.RUN;
+                settings.x = value.x;
+                break;
+            case CALLBACK.MOVE_END:
+                animation.type = ANIMATION.IDLE;
+                break;
+        }
+    }
+}
+
+function PlayerMove() {
+    let KEY = {
+            LEFT: 65,
+            RIGHT: 68,
+        },
+        callback = false,
+        settings = {
+            speed: 10,
+            x: 0,
+            y: 0,
+        };
+
+    return {
+        init: function(cb) {
+            callback = cb;
+
+            $(document).on('keydown', this.onKeyDown.bind(this));
+            $(document).on('keyup', this.onKeyUp.bind(this));
+        },
+        setXY: function(x, y) {
+            settings.x = x;
+            settings.y = y;
+        },
+        onKeyDown: function(e) {
+            let code = e.keyCode;
+
+            console.log(code);
+
+            switch(code) {
+                case KEY.LEFT:
+                    this.moveLeft();
+                    break;
+                case KEY.RIGHT:
+                    this.moveRight();
+                    break;
+            }
+        },
+        onKeyUp: function(e) {
+
+            if(callback) {
+                callback(CALLBACK.MOVE_END, false);
+            }
+        },
+        moveLeft: function() {
+            this.move(settings.speed * -1)
+        },
+        moveRight: function() {
+            this.move(settings.speed * 1)
+        },
+        move: function(distance) {
+              if(callback) {
+                  settings.x += distance;
+                  callback(CALLBACK.MOVE, {x: settings.x, y: settings.y});
+              }
+        },
     }
 }
 
