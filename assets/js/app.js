@@ -21,19 +21,25 @@ const NAMES = {
     MOVE_END: 'MOVE_END',
     CHANGE_SIDE: 'CHANGE_SIDE',
     DRAW_SPRITE: 'DRAW_SPRITE',
+    REGISTER: 'REGISTER',
+    FINISH: 'FINISH',
+
+    //tabs
+    TAB_GAME: '.screen-game',
+    SHOW: 'show',
 };
 
 const SPRITES = {
     player: {
         idle: {
-            url: '/animation/knight/idle/idle00',
+            url: '/animation/knight/idle/',
             count: 18,
             width: 1068,
             height: 1265,
             dheight: 355,
         },
         run: {
-            url: '/animation/knight/run/run00',
+            url: '/animation/knight/run/',
             count: 17,
             width: 1372,
             height: 1347,
@@ -46,43 +52,37 @@ const SPRITES = {
 // Приложение
 var Application = (function () {
 
-    let container = $('body'),
-
-        ClassName = {
-            SHOW: 'show',
-        },
-
-        settings = {};
+    let container = $('body');
 
     return {
         start: function () {
-
             // Ожидание регистрации
-            app.Register.start(this.onRegisterCallback.bind(this));
-        },
-
-        // При регистрации
-        onRegisterCallback: function (username) {
-
-            this.switchTab('game');
-
-            app.Game.start(username, this.onGameCallback);
+            app.Register.start(this.onCallback.bind(this));
         },
 
         // При получении события из игры
-        onGameCallback: function (event) {
+        onCallback: function (type, value) {
+            switch(type) {
 
+                // При регистрации
+                case NAMES.REGISTER:
+
+                    let username = value;
+                    this.switchTab(NAMES.TAB_GAME);
+                    app.Game.start(username, this.onCallback.bind(this));
+
+                    break;
+                case NAMES.FINISH:
+
+                    break;
+            }
 
         },
 
         switchTab: function (tabName) {
-            container.find('.screen').removeClass(ClassName.SHOW);
+            container.find('.screen').removeClass(NAMES.SHOW);
 
-            let tabs = {
-                game: '.screen-game',
-            };
-
-            $(tabs[tabName]).addClass(ClassName.SHOW);
+            $(tabName).addClass(NAMES.SHOW);
         }
     };
 }());
@@ -114,7 +114,7 @@ app.Register = (function () {
             let username = input.val();
 
             if (callback) {
-                callback(username);
+                callback(NAMES.REGISTER, username);
             }
 
             return false;
@@ -240,9 +240,9 @@ app.Game = (function () {
 app.SpriteManager = (function () {
     let callback = false,
 
-        images = {},
-        frames = {},
-        cache = {};
+        frames = {}, // хранение текущего кадра
+        cache = {}, // кэш для спрайтов
+        settings = {};
 
     return {
         init: function(cb) {
@@ -255,15 +255,13 @@ app.SpriteManager = (function () {
                 object = params.objectType,
                 _this = this;
 
-            if (!images.hasOwnProperty(object)) {
+            if (!frames.hasOwnProperty(object)) {
                 frames[object] = {};
-                images[object] = {};
             }
 
-            let objFrames = frames[object],
-                objImages = images[object];
+            let objFrames = frames[object];
 
-            if (!objImages.hasOwnProperty(type)) {
+            if (!objFrames.hasOwnProperty(type)) {
                 objFrames[type] = {
                     number: 1,
                 };
@@ -293,25 +291,20 @@ app.SpriteManager = (function () {
                 this.setCacheSprite(url, spriteCache);
             }
 
-            objImages[type] = spriteCache;
+            objFrames[type].image = spriteCache;
 
             this.nextImage(object, type);
+        },
+
+        // Получение ссылки на спрайт
+        getSpriteUrl: function(arParams) {
+            let sprite = this.getSprite(arParams.objectType, arParams.animationType);
+            return sprite.url + arParams.number + '.png';
         },
 
         // Получение спрайта
         getSprite: function (objectType, animationType) {
             return SPRITES[objectType][animationType];
-        },
-
-        // Получение ссылки на спрайт
-        getSpriteUrl: function(arParams) {
-            let sprite = this.getSprite(arParams.objectType, arParams.animationType),
-                formatNumber = (n) => {
-                    if (n < 10) return "0" + n;
-                    return n;
-                };
-            return sprite.url + formatNumber(arParams.number) + '.png';
-
         },
 
         // Получить спрайт из кэша
@@ -325,7 +318,7 @@ app.SpriteManager = (function () {
         // Отрисовать на сцене
         drawOnScene: function(objectType, animationType) {
             if (callback) {
-                let sprite = images[objectType][animationType],
+                let sprite = frames[objectType][animationType].image,
                     spriteInfo = this.getSprite(objectType, animationType),
                     position = this.getPosition(objectType),
                     dwidth = spriteInfo.width / (spriteInfo.height / spriteInfo.dheight);
