@@ -161,7 +161,7 @@ app.Game = (function () {
             gameCanvas.height = canvas.height;
 
             app.SpriteManager.init(this.onCallback.bind(this));
-            app.Timer.init(this.onCallback.bind(this));
+            app.Timer.start(this.onCallback.bind(this));
 
             setInterval(() => {
                 requestAnimationFrame(this.updateScene.bind(this));
@@ -389,28 +389,30 @@ app.Timer = (function() {
         object = false,
         enabled = false;
 
-    this.start = (cb) => {
-        if(enabled) return;
-        if(cb) callback = cb;
+    return {
+        start: function(cb) {
+            if(enabled) return;
+            if(cb) callback = cb;
 
-        let _this = this;
-        object = setInterval(function () {
-            _this.update();
-        }, 1000);
-    };
-    this.update = () => {
-        timer++;
-        if(callback) {
-            callback(NAMES.UPDATE_TIMER, timer);
-        }
-    };
-    this.pause = () => {
-        enabled = false;
-        clearInterval(object);
-    };
-    this.stop = () => {
-        this.pause();
-        timer = 0;
+            let _this = this;
+            object = setInterval(function () {
+                _this.update();
+            }, 1000);
+        },
+        update: function() {
+            timer++;
+            if(callback) {
+                callback(NAMES.UPDATE_TIMER, timer);
+            }
+        },
+        pause: function() {
+            enabled = false;
+            clearInterval(object);
+        },
+        stop: function() {
+            this.pause();
+            timer = 0;
+        },
     };
 })();
 
