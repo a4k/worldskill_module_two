@@ -23,6 +23,7 @@ const NAMES = {
     DRAW_SPRITE: 'DRAW_SPRITE',
     REGISTER: 'REGISTER',
     FINISH: 'FINISH',
+    UPDATE_TIMER: 'UPDATE_TIMER',
 
     //tabs
     TAB_GAME: '.screen-game',
@@ -160,6 +161,7 @@ app.Game = (function () {
             gameCanvas.height = canvas.height;
 
             app.SpriteManager.init(this.onCallback.bind(this));
+            app.Timer.init(this.onCallback.bind(this));
 
             setInterval(() => {
                 requestAnimationFrame(this.updateScene.bind(this));
@@ -196,6 +198,9 @@ app.Game = (function () {
                 case NAMES.DRAW_SPRITE:
                     this.draw(value);
                     break;
+                case NAMES.UPDATE_TIMER:
+                    this.renderTimer(value);
+                    break;
             }
         },
 
@@ -229,6 +234,23 @@ app.Game = (function () {
 
             ctx.drawImage(info.sprite, 0, 0, info.width, info.height, params.x, topOffset, info.dwidth, info.dheight);
 
+        },
+
+        // Вывод времени в формате mm:ss
+        renderTimer: function(value) {
+            let finalTime = '';
+            if(value > 60) {
+                let hours = Math.round(value / 60),
+                    minutes = value - hours * 60;
+                finalTime = hours + ':' + minutes;
+            } else {
+                if(value < 10) {
+                    finalTime = '00:0' + value;
+                } else {
+                    finalTime = '00:' + value;
+                }
+            }
+            $('.timer-value').text(finalTime);
         },
 
         finish: function () {
@@ -359,6 +381,38 @@ app.SpriteManager = (function () {
         },
     }
 }());
+
+// Таймер
+app.Timer = (function() {
+    let timer = 0,
+        callback = false,
+        object = false,
+        enabled = false;
+
+    this.start = (cb) => {
+        if(enabled) return;
+        if(cb) callback = cb;
+
+        let _this = this;
+        object = setInterval(function () {
+            _this.update();
+        }, 1000);
+    };
+    this.update = () => {
+        timer++;
+        if(callback) {
+            callback(NAMES.UPDATE_TIMER, timer);
+        }
+    };
+    this.pause = () => {
+        enabled = false;
+        clearInterval(object);
+    };
+    this.stop = () => {
+        this.pause();
+        timer = 0;
+    };
+})();
 
 // Игрок
 function Player() {
