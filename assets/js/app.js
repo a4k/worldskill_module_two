@@ -238,6 +238,7 @@ app.Game = (function () {
     };
 }());
 
+// Управление спрайтами
 app.SpriteManager = (function () {
     let callback = false,
 
