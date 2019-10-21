@@ -33,6 +33,12 @@ ol li {
 	width: 70vw;
 	height: 60vh;
 }
+.screen {
+	display: none;
+}
+.screen.show {
+	display: block;
+}
 .screen-ranking {
 	width: 50vw;
 }
@@ -41,6 +47,9 @@ ol li {
 	height: 100vh;
 	background: url(../img/bg-game.png);
 	background-size: cover;
+}
+.screen-game.show {
+	background-image: unset;
 }
 .panel {
 	width: 100%;

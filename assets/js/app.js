@@ -11,10 +11,12 @@ const NAMES = {
 
     PLAYER: 'player',
     ENEMY: 'enemy',
+    BACKGROUND: 'background',
 
     // animation
     PLAYER_IDLE: 'idle',
     PLAYER_RUN: 'run',
+    BACKGROUND_IDLE: 'idle',
 
     // callback
     MOVE: 'MOVE',
@@ -24,10 +26,13 @@ const NAMES = {
     REGISTER: 'REGISTER',
     FINISH: 'FINISH',
     UPDATE_TIMER: 'UPDATE_TIMER',
+    MAP_END: 'MAP_END',
 
     //tabs
     TAB_GAME: '.screen-game',
+    TAB_RANK: '.screen-ranking',
     SHOW: 'show',
+    TIMER_VALUE: '.timer-value',
 };
 
 const SPRITES = {
@@ -44,6 +49,15 @@ const SPRITES = {
             count: 17,
             width: 1372,
             height: 1347,
+            dheight: 355,
+        },
+    },
+    background: {
+        idle: {
+            url: '/assets/img/bg-game.png',
+            count: 1,
+            width: 1068,
+            height: 1265,
             dheight: 355,
         },
     }
@@ -74,7 +88,7 @@ var Application = (function () {
 
                     break;
                 case NAMES.FINISH:
-
+                    this.switchTab(NAMES.TAB_RANK);
                     break;
             }
 
@@ -100,7 +114,7 @@ app.Register = (function () {
             callback = cb;
             container.on('submit', this.onSubmitForm.bind(this));
 
-            // this.testData();
+            this.testData();
         },
 
         testData: function () {
@@ -136,9 +150,13 @@ app.Game = (function () {
         canvas = {
             width: $(document).width(),
             height: $(document).height(),
-            images: {},
-            frames: {}, // хранение текущего кадра
-            cache: {}, // кэш для спрайтов
+            left: 0,
+            maxLeft: 3000,
+        },
+
+        result = {
+            time: 0,
+            final_time: 0,
         },
 
         settings = {
@@ -146,7 +164,6 @@ app.Game = (function () {
                 PLAYING: 1,
                 STOP: 2,
             },
-            N: 0,
             UPDATE_TIMEOUT: 50,
         };
 
@@ -155,6 +172,7 @@ app.Game = (function () {
             callback = cb;
 
             this.setState(settings.states.PLAYING);
+            this.add(NAMES.BACKGROUND, username);
             this.add(NAMES.PLAYER, username);
 
             gameCanvas.width = canvas.width;
@@ -187,6 +205,16 @@ app.Game = (function () {
                     objects.push(player);
                     player.initMover();
                     break;
+                case NAMES.BACKGROUND:
+
+                    let s = SPRITES[NAMES.BACKGROUND][NAMES.BACKGROUND_IDLE];
+                    s.width = canvas.width;
+                    s.height = canvas.height;
+                    s.dheight = s.height;
+
+                    let bg = new Background().setName(name);
+                    objects.push(bg);
+                    break;
                 case NAMES.ENEMY:
 
                     break;
@@ -201,11 +229,16 @@ app.Game = (function () {
                 case NAMES.UPDATE_TIMER:
                     this.renderTimer(value);
                     break;
+                case NAMES.MAP_END:
+                    this.finish(value);
+                    break;
             }
         },
 
         // Обновление сцены
         updateScene: function () {
+            let _this = this;
+
             if (this.getState() === settings.states.STOP) return;
 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -213,6 +246,7 @@ app.Game = (function () {
             // Обработка объектов сцены
             objects.map(function (value, i) {
                 let isPlayer = value instanceof Player;
+                let isBg = value instanceof Background;
 
                 let animation = value.getAnimation(),
                     position = value.getPosition();
@@ -220,11 +254,44 @@ app.Game = (function () {
                 let params = $.extend({}, animation, position);
                 if (isPlayer) {
                     params.objectType = NAMES.PLAYER;
+                    position = _this.calcPlayerPosition(position);
+                    params = $.extend({}, params, position);
                 }
+                if(isBg) {
+                    params.objectType = NAMES.BACKGROUND;
+                    position = _this.calcBackgroundPosition(position);
+                    params = $.extend({}, params, position);
+                }
+
                 app.SpriteManager.draw(params);
             });
 
 
+        },
+
+        // Посчитать позицию игрока
+        calcPlayerPosition: function (position, callback) {
+            let center = canvas.width / 2;
+            let isMiddle = position.x > center;
+            let isEnd = position.x >= canvas.maxLeft;
+
+            if(isEnd) {
+                if(position.x > canvas.width - 300) {
+                    this.onCallback(NAMES.MAP_END, true)
+                }
+
+            } else if(isMiddle) {
+                let pLeft = position.x - center;
+                position.x -= pLeft;
+                canvas.left = pLeft;
+            }
+            return position;
+        },
+
+        // Посчитать позицию фона
+        calcBackgroundPosition: function (position) {
+            position.sx = canvas.left;
+            return position;
         },
 
         // Отрисовка спрайта
@@ -232,29 +299,27 @@ app.Game = (function () {
             let info = params.info;
             let topOffset = canvas.height - info.dheight;
 
-            ctx.drawImage(info.sprite, 0, 0, info.width, info.height, params.x, topOffset, info.dwidth, info.dheight);
+            let sx = params.sx || 0;
+            ctx.drawImage(info.sprite, sx, 0, info.width, info.height, params.x, topOffset, info.dwidth, info.dheight);
 
         },
 
         // Вывод времени в формате mm:ss
         renderTimer: function(value) {
-            let finalTime = '';
-            if(value > 60) {
-                let hours = Math.round(value / 60),
-                    minutes = value - hours * 60;
-                finalTime = hours + ':' + minutes;
-            } else {
-                if(value < 10) {
-                    finalTime = '00:0' + value;
-                } else {
-                    finalTime = '00:' + value;
-                }
-            }
-            $('.timer-value').text(finalTime);
+            let finalTime = app.Timer.getFinalTime(value);
+
+            $(NAMES.TIMER_VALUE).text(finalTime);
         },
 
-        finish: function () {
+        finish: function (value) {
+            if(this.getState() === settings.states.PLAYING) {
+                this.setState(settings.states.STOP);
 
+                result.time = app.Timer.get();
+                result.final_time = app.Timer.getFinalTime(result.time);
+                app.Timer.stop();
+                callback(NAMES.FINISH, value)
+            }
         },
 
     };
@@ -321,6 +386,10 @@ app.SpriteManager = (function () {
         // Получение ссылки на спрайт
         getSpriteUrl: function(arParams) {
             let sprite = this.getSprite(arParams);
+
+            if(arParams.info.hasOwnProperty('count') && arParams.info.count === 1) {
+                return sprite.url;
+            }
             return sprite.url + arParams.number + '.png';
         },
 
@@ -413,8 +482,57 @@ app.Timer = (function() {
             this.pause();
             timer = 0;
         },
+        get: function() {
+            return timer;
+        },
+        getFinalTime: function(value) {
+            let finalTime = '';
+            if(value > 60) {
+                let hours = Math.round(value / 60),
+                    minutes = value - hours * 60;
+                finalTime = hours + ':' + minutes;
+            } else {
+                if(value < 10) {
+                    finalTime = '00:0' + value;
+                } else {
+                    finalTime = '00:' + value;
+                }
+            }
+            return finalTime;
+        },
     };
 })();
+
+// Фон
+function Background() {
+
+    let name,
+
+        animation = {
+            x: 0,
+            y: 0,
+            animationType: NAMES.BACKGROUND_IDLE,
+            side: NAMES.RIGHT_SIDE,
+        },
+
+        settings = {
+            sx: 0,
+            x: 0,
+            y: 0,
+        };
+
+    this.setName = function (uname) {
+        name = uname;
+
+        return this;
+    };
+    this.getAnimation = () => {
+        return Object.assign({}, animation);
+    };
+    this.getPosition = () => {
+        return {x: settings.x, y: settings.y};
+    };
+}
 
 // Игрок
 function Player() {
@@ -439,9 +557,6 @@ function Player() {
         name = uname;
 
         return this;
-    };
-    this.setAnimation = (s) => {
-        animation = s;
     };
     this.getAnimation = () => {
         return Object.assign({}, animation);
