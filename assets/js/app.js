@@ -99,7 +99,7 @@ app.Register = (function () {
             callback = cb;
             container.on('submit', this.onSubmitForm.bind(this));
 
-            this.testData();
+            // this.testData();
         },
 
         testData: function () {
