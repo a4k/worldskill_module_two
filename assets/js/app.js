@@ -8,6 +8,7 @@ app.States = {
 const NAMES = {
     LEFT_SIDE: 'left_side',
     RIGHT_SIDE: 'right_side',
+    ATTACK_SWORD: 'ATTACK_SWORD',
 
     PLAYER: 'player',
     ENEMY: 'enemy',
@@ -16,6 +17,7 @@ const NAMES = {
     // animation
     PLAYER_IDLE: 'idle',
     PLAYER_RUN: 'run',
+    PLAYER_ATTACK: 'attack1',
     BACKGROUND_IDLE: 'idle',
 
     // callback
@@ -49,6 +51,13 @@ const SPRITES = {
             count: 17,
             width: 1372,
             height: 1347,
+            dheight: 355,
+        },
+        attack1: {
+            url: '/animation/knight/attack1/',
+            count: 21,
+            width: 1372,
+            height: 1265,
             dheight: 355,
         },
     },
@@ -180,6 +189,7 @@ app.Game = (function () {
 
             app.SpriteManager.init(this.onCallback.bind(this));
             app.Timer.start(this.onCallback.bind(this));
+            app.GameUI.init(this.onCallback.bind(this));
 
             setInterval(() => {
                 requestAnimationFrame(this.updateScene.bind(this));
@@ -231,6 +241,13 @@ app.Game = (function () {
                     break;
                 case NAMES.MAP_END:
                     this.finish(value);
+                    break;
+                case NAMES.ATTACK_SWORD:
+                    objects.map(function(v, i) {
+                        if(v instanceof Player) {
+                            v.attackSword(value);
+                        }
+                    });
                     break;
             }
         },
@@ -385,9 +402,9 @@ app.SpriteManager = (function () {
 
         // Получение ссылки на спрайт
         getSpriteUrl: function(arParams) {
-            let sprite = this.getSprite(arParams);
+            let sprite = arParams.info;
 
-            if(arParams.info.hasOwnProperty('count') && arParams.info.count === 1) {
+            if(sprite.hasOwnProperty('count') && sprite.count === 1) {
                 return sprite.url;
             }
             return sprite.url + arParams.number + '.png';
@@ -570,6 +587,12 @@ function Player() {
         mover.setXY(settings.x, settings.y);
         mover.init(this.onCallback.bind(this));
     };
+    this.attackSword = (value) => {
+        mover.attackSword();
+        setTimeout(function() {
+            mover.idle();
+        }, 1000)
+    };
     this.onCallback = (key, value) => {
         switch (key) {
             case NAMES.MOVE:
@@ -582,6 +605,9 @@ function Player() {
             case NAMES.MOVE_END:
                 animation.animationType = NAMES.PLAYER_IDLE;
                 break;
+            case NAMES.ATTACK_SWORD:
+                animation.animationType = NAMES.PLAYER_ATTACK;
+                break;
         }
     }
 }
@@ -590,6 +616,7 @@ function PlayerMove() {
     let KEY = {
             LEFT: 65,
             RIGHT: 68,
+            ONE: 49,
         },
         callback = false,
         settings = {
@@ -621,13 +648,18 @@ function PlayerMove() {
                 case KEY.RIGHT:
                     this.moveRight();
                     break;
+                case KEY.ONE:
+                    this.attackSword();
+                    break;
             }
         },
         onKeyUp: function (e) {
-
             if (callback) {
-                callback(NAMES.MOVE_END, false);
+                this.idle();
             }
+        },
+        idle: function() {
+            callback(NAMES.MOVE_END, false);
         },
         moveLeft: function () {
             callback(NAMES.CHANGE_SIDE, NAMES.LEFT_SIDE);
@@ -637,12 +669,32 @@ function PlayerMove() {
             callback(NAMES.CHANGE_SIDE, NAMES.RIGHT_SIDE);
             this.move(settings.speed * 1)
         },
+        attackSword: function () {
+            callback(NAMES.ATTACK_SWORD, true);
+        },
         move: function (distance) {
             settings.x += distance;
             callback(NAMES.MOVE, {x: settings.x, y: settings.y});
         },
     }
 }
+
+// Пользовательский интерфейс
+app.GameUI = (function () {
+    let callback = false,
+        settings = {};
+
+    return {
+        init: function (cb) {
+            callback = cb;
+
+            $('body').on('click', '.attack1', this.onAttackSword.bind(this));
+        },
+        onAttackSword: function(e) {
+            callback(NAMES.ATTACK_SWORD, true)
+        },
+    }
+})();
 
 // Запуск приложения
 Application.start();
