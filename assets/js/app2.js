@@ -55,9 +55,14 @@ function App(options) {
         mediator.callTrigger(TRIGGER.START_GAME, true)
 
     }
+    this.showRanking = (data) => {
+        let obj = new Ranking({mediator, data});
+
+    }
     function init() {
         mediator.subscribe(TRIGGER.REGISTER, _this.register.bind(this))
         mediator.subscribe(TRIGGER.TAB_CHANGE, _this.tabChange.bind(this))
+        mediator.subscribe(TRIGGER.SHOW_RANKING, _this.showRanking.bind(this))
 
 
         mediator.callTrigger(TRIGGER.REGISTER, 'sdf')
@@ -322,6 +327,26 @@ function Player(options) {
         mediator.subscribe(TRIGGER.MOVE_RIGHT, _this.moveRight.bind(this))
         mediator.subscribe(TRIGGER.ATTACK_ONE, _this.attackOne.bind(this))
         mediator.subscribe(TRIGGER.PLAYER_IDLE, _this.idle.bind(this))
+    }
+    init();
+}
+
+
+function Ranking(options) {
+    const mediator = options.mediator;
+    const TRIGGER = mediator.getTriggerTypes();
+    const data = options.data || {};
+    const _this = this;
+
+
+    this.ranking = (data) => {
+
+    }
+    function init() {
+        mediator.subscribe(TRIGGER.RANKING, _this.ranking.bind(this))
+
+
+        mediator.callTrigger(TRIGGER.RANKING, data)
     }
     init();
 }
