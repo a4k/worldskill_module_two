@@ -2,6 +2,7 @@ const mediator = new Mediator({triggers: SETTINGS.TRIGGER, names: SETTINGS.NAMES
 const game = new Game({mediator});
 const ui = new UI({mediator});
 const app = new App({mediator});
+const ranking = new Ranking({mediator});
 
 function Mediator(options) {
 
@@ -55,14 +56,9 @@ function App(options) {
         mediator.callTrigger(TRIGGER.START_GAME, true)
 
     }
-    this.showRanking = (data) => {
-        let obj = new Ranking({mediator, data});
-
-    }
     function init() {
         mediator.subscribe(TRIGGER.REGISTER, _this.register.bind(this))
         mediator.subscribe(TRIGGER.TAB_CHANGE, _this.tabChange.bind(this))
-        mediator.subscribe(TRIGGER.SHOW_RANKING, _this.showRanking.bind(this))
 
 
         mediator.callTrigger(TRIGGER.REGISTER, 'sdf')
@@ -102,7 +98,7 @@ function Game(options) {
     }
     this.endGame = (data) => {
         isPower = false;
-        mediator.callTrigger(TRIGGER.TAB_CHANGE, '.screen-ranking')
+        mediator.callTrigger(TRIGGER.RANKING, data)
     }
     this.updateScene = () => {
         if(isPower) {
@@ -335,18 +331,15 @@ function Player(options) {
 function Ranking(options) {
     const mediator = options.mediator;
     const TRIGGER = mediator.getTriggerTypes();
-    const data = options.data || {};
     const _this = this;
 
 
     this.ranking = (data) => {
-
+        mediator.callTrigger(TRIGGER.TAB_CHANGE, '.screen-ranking')
     }
     function init() {
         mediator.subscribe(TRIGGER.RANKING, _this.ranking.bind(this))
 
-
-        mediator.callTrigger(TRIGGER.RANKING, data)
     }
     init();
 }
