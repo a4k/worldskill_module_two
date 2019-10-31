@@ -1,4 +1,4 @@
-const mediator = new Mediator({triggers: SETTINGS.TRIGGER});
+const mediator = new Mediator({triggers: SETTINGS.TRIGGER, names: SETTINGS.NAMES});
 const game = new Game({mediator});
 const ui = new UI({mediator});
 const app = new App({mediator});
@@ -6,7 +6,12 @@ const app = new App({mediator});
 function Mediator(options) {
 
     const TRIGGERS = options.triggers || {};
+    const NAMES = options.names || {};
     const triggers = {};
+
+    this.getNames = () => {
+        return NAMES
+    };
 
     this.getTriggerTypes = () => {
         return TRIGGERS
@@ -77,7 +82,7 @@ function Game(options) {
     };
     let resource = {
         cache: {},
-    }
+    };
 
     this.addObject = (obj) => {
         objects.push(obj)
@@ -106,6 +111,7 @@ function Game(options) {
         let animation = animations[current.name];
         let url = animation.url + current.number + animation.postfix;
 
+
         let nextAnimation = function() {
             if(current.number === animation.count) {
                 current.number = 1;
@@ -117,7 +123,15 @@ function Game(options) {
             nextAnimation();
             animation.dwidth = animation.width / (animation.height / animation.dheight);
             let dy = settings.canvasHeight - animation.dheight;
-            ctx.drawImage(image, current.dx, 0, animation.width, animation.height, current.left, dy, animation.dwidth, animation.dheight)
+
+            ctx.save();
+            ctx.translate(current.left, dy);
+            ctx.scale(current.direction, 1);
+
+            ctx.drawImage(image, 0, 0, animation.dwidth * current.direction, animation.dheight);
+
+            ctx.restore();
+
         }
 
         let image;
@@ -188,6 +202,7 @@ function Player(options) {
 
     const mediator = options.mediator;
     const TRIGGER = mediator.getTriggerTypes();
+    const NAMES = mediator.getNames();
     const _this = this;
 
     let username = options.username;
@@ -214,8 +229,8 @@ function Player(options) {
         current: {
             name: 'idle',
             number: 1,
-            dx: 0,
             left: 0,
+            direction: NAMES.DIRECTION_RIGHT,
         }
     }
 
@@ -224,30 +239,34 @@ function Player(options) {
     }
     this.moveLeft = (data) => {
         if(data === 1) {
-            _this.move(-10)
+            _this.move(-10, NAMES.DIRECTION_LEFT)
         }
     }
     this.moveRight = (data) => {
         if(data === 1) {
-            _this.move(10)
+            _this.move(10, NAMES.DIRECTION_RIGHT)
         }
     }
-    this.move = (data) => {
+    this.move = (data, direction = false) => {
         let c = animation.current;
         c.left += data;
+        if(direction) {
+            c.direction = direction;
+        }
         _this.setAnimation('run')
     }
     this.idle = (data) => {
         _this.setAnimation('idle')
     }
     this.setAnimation = (name) => {
-        let c = animation.current;
-        animation.current = {
-            name: name,
-            number: 1,
-            dx: 0,
-            left: c.left,
+
+        if(animation.current.name === name) {
+            return;
         }
+
+        let c = animation.current;
+        c.name = name;
+        c.number = 1;
     }
 
     function init() {
