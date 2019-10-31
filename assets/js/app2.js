@@ -79,6 +79,7 @@ function Game(options) {
     let settings = {
         canvasWidth: $(document).width(),
         canvasHeight: $(document).height(),
+        canvasLeft: 0,
     };
     let resource = {
         cache: {},
@@ -87,12 +88,16 @@ function Game(options) {
     this.addObject = (obj) => {
         objects.push(obj)
     };
-    this.startGame = (msg) => {
-        isPower = msg;
+    this.startGame = (data) => {
+        isPower = data;
         canvas.width = settings.canvasWidth;
         canvas.height = settings.canvasHeight;
 
         this.updateScene();
+    }
+    this.endGame = (data) => {
+        isPower = false;
+        mediator.callTrigger(TRIGGER.TAB_CHANGE, '.screen-ranking')
     }
     this.updateScene = () => {
         if(isPower) {
@@ -150,10 +155,16 @@ function Game(options) {
 
     }
 
+    this.getCanvasSettings = (data) => {
+        return settings;
+    }
+
 
     function init() {
         mediator.subscribe(TRIGGER.ADD_OBJECT, _this.addObject.bind(this))
         mediator.subscribe(TRIGGER.START_GAME, _this.startGame.bind(this))
+        mediator.subscribe(TRIGGER.END_GAME, _this.endGame.bind(this))
+        mediator.subscribe(TRIGGER.GET_CANVAS_SETTINGS, _this.getCanvasSettings.bind(this))
 
     }
     init();
@@ -168,6 +179,7 @@ function UI(options) {
     let keys = {
         LEFT: 65,
         RIGHT: 68,
+        ONE: 49,
     };
 
     function init() {
@@ -187,6 +199,9 @@ function UI(options) {
                     break;
                 case keys.RIGHT:
                     mediator.callTrigger(TRIGGER.MOVE_RIGHT, 1)
+                    break;
+                case keys.ONE:
+                    mediator.callTrigger(TRIGGER.ATTACK_ONE, 1)
                     break;
             }
         })
@@ -226,6 +241,15 @@ function Player(options) {
             dheight: 355,
             dwidth: 0,
         },
+        attack1: {
+            url: '/animation/knight/attack1/',
+            postfix: '.png',
+            count: 21,
+            width: 1965,
+            height: 1265,
+            dheight: 355,
+            dwidth: 0,
+        },
         current: {
             name: 'idle',
             number: 1,
@@ -249,7 +273,24 @@ function Player(options) {
     }
     this.move = (data, direction = false) => {
         let c = animation.current;
-        c.left += data;
+
+        let canvas = mediator.callTrigger(TRIGGER.GET_CANVAS_SETTINGS, 1);
+
+        if (c.left > canvas.canvasWidth / 2 - 100) {
+            if (canvas.canvasLeft < 0) {
+                c.left += data;
+            }
+            if (canvas.canvasLeft > NAMES.MAX_CANVAS_WIDTH) {
+                c.left += data;
+            } else {
+                canvas.canvasLeft += data;
+            }
+        } else {
+            c.left += data;
+        }
+        if (c.left > canvas.canvasWidth - 100) {
+            mediator.callTrigger(TRIGGER.END_GAME, {})
+        }
         if(direction) {
             c.direction = direction;
         }
@@ -268,12 +309,18 @@ function Player(options) {
         c.name = name;
         c.number = 1;
     }
+    this.attackOne = (data) => {
+        if(data === 1) {
+            _this.setAnimation('attack1')
+        }
+    }
 
     function init() {
         $('.user-info').html(username)
 
         mediator.subscribe(TRIGGER.MOVE_LEFT, _this.moveLeft.bind(this))
         mediator.subscribe(TRIGGER.MOVE_RIGHT, _this.moveRight.bind(this))
+        mediator.subscribe(TRIGGER.ATTACK_ONE, _this.attackOne.bind(this))
         mediator.subscribe(TRIGGER.PLAYER_IDLE, _this.idle.bind(this))
     }
     init();
