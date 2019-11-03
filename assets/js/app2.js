@@ -305,7 +305,14 @@ function Player(options) {
                 canvas.canvasLeft += data;
             }
         } else {
-            c.left += data;
+            if (canvas.canvasLeft > 0) {
+                canvas.canvasLeft += data;
+            } else {
+                c.left += data;
+            }
+        }
+        if (c.left < 0) {
+            c.left = 0;
         }
         if (c.left > canvas.canvasWidth - 100) {
             mediator.callTrigger(TRIGGER.END_GAME, {})
@@ -387,6 +394,8 @@ function Background(options) {
     }
 
     this.getAnimation = () => {
+        let canvas = mediator.callTrigger(TRIGGER.GET_CANVAS_SETTINGS, 1);
+        animation.current.left = -canvas.canvasLeft;
         return animation;
     }
     this.idle = (data) => {
