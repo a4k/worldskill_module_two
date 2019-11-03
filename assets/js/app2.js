@@ -2,6 +2,7 @@ const mediator = new Mediator({triggers: SETTINGS.TRIGGER, names: SETTINGS.NAMES
 const game = new Game({mediator});
 const ui = new UI({mediator});
 const app = new App({mediator});
+const ranking = new Ranking({mediator});
 
 function Mediator(options) {
 
@@ -79,24 +80,32 @@ function Game(options) {
     let settings = {
         canvasWidth: $(document).width(),
         canvasHeight: $(document).height(),
+        canvasLeft: 0,
     };
     let resource = {
         cache: {},
     };
 
     this.addObject = (obj) => {
+        if(objects.length < 1) {
+            objects.push(new Background({mediator}));
+        }
         objects.push(obj)
     };
-    this.startGame = (msg) => {
-        isPower = msg;
+    this.startGame = (data) => {
+        isPower = data;
         canvas.width = settings.canvasWidth;
         canvas.height = settings.canvasHeight;
 
         this.updateScene();
     }
+    this.endGame = (data) => {
+        isPower = false;
+        mediator.callTrigger(TRIGGER.RANKING, data)
+    }
     this.updateScene = () => {
         if(isPower) {
-            ctx.clearRect(0, 0, settings.canvasWidth, settings.canvasHeight)
+            ctx.clearRect(0, 0, settings.canvasWidth, settings.canvasHeight);
 
             $.each(objects, function(k, v) {
                 _this.drawObject(v)
@@ -114,6 +123,9 @@ function Game(options) {
 
         let nextAnimation = function() {
             if(current.number === animation.count) {
+                if(current.callback && current.callback.hasOwnProperty('done')) {
+                    current.callback.done(animation.count);
+                }
                 current.number = 1;
             } else {
                 current.number++;
@@ -150,10 +162,16 @@ function Game(options) {
 
     }
 
+    this.getCanvasSettings = (data) => {
+        return settings;
+    }
+
 
     function init() {
         mediator.subscribe(TRIGGER.ADD_OBJECT, _this.addObject.bind(this))
         mediator.subscribe(TRIGGER.START_GAME, _this.startGame.bind(this))
+        mediator.subscribe(TRIGGER.END_GAME, _this.endGame.bind(this))
+        mediator.subscribe(TRIGGER.GET_CANVAS_SETTINGS, _this.getCanvasSettings.bind(this))
 
     }
     init();
@@ -168,6 +186,7 @@ function UI(options) {
     let keys = {
         LEFT: 65,
         RIGHT: 68,
+        ONE: 49,
     };
 
     function init() {
@@ -188,11 +207,20 @@ function UI(options) {
                 case keys.RIGHT:
                     mediator.callTrigger(TRIGGER.MOVE_RIGHT, 1)
                     break;
+                case keys.ONE:
+                    mediator.callTrigger(TRIGGER.ATTACK_ONE, 1)
+                    break;
             }
         })
         $(document).on('keyup', function(e) {
 
             mediator.callTrigger(TRIGGER.PLAYER_IDLE, 1)
+        })
+        $('.attack1').on('click', function (e) {
+            let t = $(e.target);
+            if(t.hasClass('disable')) return false;
+
+            mediator.callTrigger(TRIGGER.ATTACK_ONE, 1)
         })
     }
     init();
@@ -206,6 +234,9 @@ function Player(options) {
     const _this = this;
 
     let username = options.username;
+    let settings = {
+        skill_active: false,
+    };
 
     let animation = {
         idle: {
@@ -226,11 +257,21 @@ function Player(options) {
             dheight: 355,
             dwidth: 0,
         },
+        attack1: {
+            url: '/animation/knight/attack1/',
+            postfix: '.png',
+            count: 21,
+            width: 1965,
+            height: 1265,
+            dheight: 355,
+            dwidth: 0,
+        },
         current: {
             name: 'idle',
             number: 1,
             left: 0,
             direction: NAMES.DIRECTION_RIGHT,
+            callback: false,
         }
     }
 
@@ -248,17 +289,38 @@ function Player(options) {
         }
     }
     this.move = (data, direction = false) => {
+        if(settings.skill_active) return;
+
         let c = animation.current;
-        c.left += data;
+
+        let canvas = mediator.callTrigger(TRIGGER.GET_CANVAS_SETTINGS, 1);
+
+        if (c.left > canvas.canvasWidth / 2 - 100) {
+            if (canvas.canvasLeft < 0) {
+                c.left += data;
+            }
+            if (canvas.canvasLeft > NAMES.MAX_CANVAS_WIDTH) {
+                c.left += data;
+            } else {
+                canvas.canvasLeft += data;
+            }
+        } else {
+            c.left += data;
+        }
+        if (c.left > canvas.canvasWidth - 100) {
+            mediator.callTrigger(TRIGGER.END_GAME, {})
+        }
         if(direction) {
             c.direction = direction;
         }
         _this.setAnimation('run')
     }
     this.idle = (data) => {
+        if(settings.skill_active) return;
+
         _this.setAnimation('idle')
     }
-    this.setAnimation = (name) => {
+    this.setAnimation = (name, cb = false) => {
 
         if(animation.current.name === name) {
             return;
@@ -267,6 +329,24 @@ function Player(options) {
         let c = animation.current;
         c.name = name;
         c.number = 1;
+        c.callback = cb;
+    }
+    this.attackOne = (data) => {
+        if(settings.skill_active) return;
+
+        if(data === 1) {
+            let cb = {
+                done: function(msg) {
+                    settings.skill_active = false;
+                    $('.attack1').removeClass('disable');
+                    _this.setAnimation('idle');
+                }
+            };
+            _this.setAnimation('attack1', cb);
+            $('.attack1').addClass('disable');
+
+            settings.skill_active = true;
+        }
     }
 
     function init() {
@@ -274,7 +354,79 @@ function Player(options) {
 
         mediator.subscribe(TRIGGER.MOVE_LEFT, _this.moveLeft.bind(this))
         mediator.subscribe(TRIGGER.MOVE_RIGHT, _this.moveRight.bind(this))
+        mediator.subscribe(TRIGGER.ATTACK_ONE, _this.attackOne.bind(this))
         mediator.subscribe(TRIGGER.PLAYER_IDLE, _this.idle.bind(this))
+    }
+    init();
+}
+
+function Background(options) {
+
+    const mediator = options.mediator;
+    const TRIGGER = mediator.getTriggerTypes();
+    const NAMES = mediator.getNames();
+    const _this = this;
+
+    let animation = {
+        idle: {
+            url: '/animation/bg/',
+            postfix: '.png',
+            count: 1,
+            width: 9000,
+            height: 1265,
+            dheight: 1265,
+            dwidth: 0,
+        },
+        current: {
+            name: 'idle',
+            number: 1,
+            left: 0,
+            direction: NAMES.DIRECTION_RIGHT,
+            callback: false,
+        }
+    }
+
+    this.getAnimation = () => {
+        return animation;
+    }
+    this.idle = (data) => {
+        _this.setAnimation('idle')
+    }
+    this.setAnimation = (name, cb = false) => {
+
+        if(animation.current.name === name) {
+            return;
+        }
+
+        let c = animation.current;
+        c.name = name;
+        c.number = 1;
+        c.callback = cb;
+    }
+
+    function init() {
+        let canvas = mediator.callTrigger(TRIGGER.GET_CANVAS_SETTINGS, 1);
+        animation.idle.height = canvas.canvasHeight;
+        animation.idle.dheight = canvas.canvasHeight;
+
+        mediator.subscribe(TRIGGER.BACKGROUND_IDLE, _this.idle.bind(this))
+    }
+    init();
+}
+
+
+function Ranking(options) {
+    const mediator = options.mediator;
+    const TRIGGER = mediator.getTriggerTypes();
+    const _this = this;
+
+
+    this.ranking = (data) => {
+        mediator.callTrigger(TRIGGER.TAB_CHANGE, '.screen-ranking')
+    }
+    function init() {
+        mediator.subscribe(TRIGGER.RANKING, _this.ranking.bind(this))
+
     }
     init();
 }
