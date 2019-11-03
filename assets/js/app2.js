@@ -52,8 +52,8 @@ function App(options) {
     }
     this.register = (username) => {
         let obj = new Player({mediator, username});
-        mediator.callTrigger(TRIGGER.ADD_OBJECT, obj)
         mediator.callTrigger(TRIGGER.START_GAME, true)
+        mediator.callTrigger(TRIGGER.ADD_OBJECT, obj)
 
     }
     function init() {
@@ -73,6 +73,7 @@ function Game(options) {
     const _this = this;
 
     let objects = [],
+        enemies = false,
         isPower = false,
         canvas = document.getElementById('game-canvas'),
         ctx = canvas.getContext('2d');
@@ -87,15 +88,15 @@ function Game(options) {
     };
 
     this.addObject = (obj) => {
-        if(objects.length < 1) {
-            objects.push(new Background({mediator}));
-        }
         objects.push(obj)
     };
     this.startGame = (data) => {
         isPower = data;
         canvas.width = settings.canvasWidth;
         canvas.height = settings.canvasHeight;
+
+        enemies = new EnemyManager({mediator});
+        objects.push(new Background({mediator}));
 
         this.updateScene();
     }
@@ -107,7 +108,10 @@ function Game(options) {
         if(isPower) {
             ctx.clearRect(0, 0, settings.canvasWidth, settings.canvasHeight);
 
-            $.each(objects, function(k, v) {
+            let enObj = enemies.getObjects();
+            let arObj = objects.concat(enObj);
+
+            $.each(arObj, function(k, v) {
                 _this.drawObject(v)
             })
 
@@ -363,6 +367,148 @@ function Player(options) {
         mediator.subscribe(TRIGGER.MOVE_RIGHT, _this.moveRight.bind(this))
         mediator.subscribe(TRIGGER.ATTACK_ONE, _this.attackOne.bind(this))
         mediator.subscribe(TRIGGER.PLAYER_IDLE, _this.idle.bind(this))
+        mediator.subscribe(TRIGGER.GET_PLAYER_ANIMATION, _this.getAnimation.bind(this))
+    }
+    init();
+}
+
+function EnemyManager(options) {
+
+    const mediator = options.mediator;
+    const TRIGGER = mediator.getTriggerTypes();
+    const NAMES = mediator.getNames();
+    const _this = this;
+
+    let objects = [];
+    let settings = {
+        maxObjects: 0,
+        maxEnemyLevel: 0,
+    };
+
+    this.updateEnemyLevel = (data = {level: 0}) => {
+        if(data.level < 2) {
+            settings.maxObjects = 1;
+            settings.maxEnemyLevel = 1;
+        } else {
+            settings.maxObjects = settings.maxObjects * data.level;
+            if(settings.maxObjects > 5) {
+                settings.maxEnemyLevel = 3;
+            } else if(settings.maxObjects > 3) {
+                settings.maxEnemyLevel = 2;
+            } else {
+                settings.maxEnemyLevel = 1;
+            }
+        }
+        this.render();
+    }
+
+    this.render = () => {
+        if(objects.length < settings.maxObjects) {
+            let randLevel = Math.floor(Math.random() * settings.maxEnemyLevel) + 1;
+            switch (randLevel) {
+                case 1:
+                    this.addObject(new Dog({mediator}));
+            }
+        }
+
+        if(objects.length < settings.maxObjects) {
+            this.render();
+        }
+    }
+
+    this.addObject = (obj) => {
+        let canvas = mediator.callTrigger(TRIGGER.GET_CANVAS_SETTINGS);
+        obj.moveLeft(canvas.canvasWidth - 300);
+        let a = obj.getAnimation();
+        objects.push(obj);
+    }
+    this.getObjects = () => {
+        return objects;
+    }
+
+
+    function init() {
+        mediator.subscribe(TRIGGER.UPDATE_ENEMY_LEVEL, _this.updateEnemyLevel.bind(this))
+        mediator.subscribe(TRIGGER.GET_ENEMIES, _this.getObjects.bind(this))
+
+        _this.updateEnemyLevel()
+        _this.render();
+    }
+    init();
+}
+
+function Dog(options) {
+
+    const mediator = options.mediator;
+    const TRIGGER = mediator.getTriggerTypes();
+    const NAMES = mediator.getNames();
+    const _this = this;
+
+    let animation = {
+        run: {
+            url: '/animation/dog/run/',
+            postfix: '.png',
+            count: 8,
+            width: 128,
+            height: 85,
+            dheight: 85,
+            dwidth: 0,
+        },
+        current: {
+            name: 'run',
+            number: 1,
+            left: 0,
+            direction: NAMES.DIRECTION_RIGHT,
+            callback: false,
+        }
+    }
+
+    this.getAnimation = () => {
+        return animation;
+    }
+    this.moveLeft = (data) => {
+        if(data === 1) {
+            _this.move(-10, NAMES.DIRECTION_LEFT)
+        } else {
+            _this.move(data, NAMES.DIRECTION_LEFT)
+        }
+    }
+    this.moveRight = (data) => {
+        if(data === 1) {
+            _this.move(10, NAMES.DIRECTION_RIGHT)
+        } else {
+            _this.move(data, NAMES.DIRECTION_RIGHT)
+        }
+    }
+    this.move = (data, direction = false) => {
+        let c = animation.current;
+
+        c.left = data;
+        if(direction) {
+            c.direction = direction;
+        }
+        _this.setAnimation('run')
+    }
+    this.run = (data) => {
+        _this.setAnimation('run')
+    }
+    this.setAnimation = (name, cb = false) => {
+
+        if(animation.current.name === name) {
+            return;
+        }
+
+        let c = animation.current;
+        c.name = name;
+        c.number = 1;
+        c.callback = cb;
+    }
+
+    function init() {
+
+        mediator.subscribe(TRIGGER.DOG_MOVE_LEFT, _this.moveLeft.bind(this))
+        mediator.subscribe(TRIGGER.DOG_MOVE_RIGHT, _this.moveRight.bind(this))
+        mediator.subscribe(TRIGGER.DOG_RUN, _this.run.bind(this))
     }
     init();
 }
