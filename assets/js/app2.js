@@ -87,6 +87,9 @@ function Game(options) {
     };
 
     this.addObject = (obj) => {
+        if(objects.length < 1) {
+            objects.push(new Background({mediator}));
+        }
         objects.push(obj)
     };
     this.startGame = (data) => {
@@ -102,7 +105,7 @@ function Game(options) {
     }
     this.updateScene = () => {
         if(isPower) {
-            ctx.clearRect(0, 0, settings.canvasWidth, settings.canvasHeight)
+            ctx.clearRect(0, 0, settings.canvasWidth, settings.canvasHeight);
 
             $.each(objects, function(k, v) {
                 _this.drawObject(v)
@@ -120,6 +123,9 @@ function Game(options) {
 
         let nextAnimation = function() {
             if(current.number === animation.count) {
+                if(current.callback && current.callback.hasOwnProperty('done')) {
+                    current.callback.done(animation.count);
+                }
                 current.number = 1;
             } else {
                 current.number++;
@@ -210,6 +216,12 @@ function UI(options) {
 
             mediator.callTrigger(TRIGGER.PLAYER_IDLE, 1)
         })
+        $('.attack1').on('click', function (e) {
+            let t = $(e.target);
+            if(t.hasClass('disable')) return false;
+
+            mediator.callTrigger(TRIGGER.ATTACK_ONE, 1)
+        })
     }
     init();
 }
@@ -222,6 +234,9 @@ function Player(options) {
     const _this = this;
 
     let username = options.username;
+    let settings = {
+        skill_active: false,
+    };
 
     let animation = {
         idle: {
@@ -256,6 +271,7 @@ function Player(options) {
             number: 1,
             left: 0,
             direction: NAMES.DIRECTION_RIGHT,
+            callback: false,
         }
     }
 
@@ -273,6 +289,8 @@ function Player(options) {
         }
     }
     this.move = (data, direction = false) => {
+        if(settings.skill_active) return;
+
         let c = animation.current;
 
         let canvas = mediator.callTrigger(TRIGGER.GET_CANVAS_SETTINGS, 1);
@@ -298,9 +316,11 @@ function Player(options) {
         _this.setAnimation('run')
     }
     this.idle = (data) => {
+        if(settings.skill_active) return;
+
         _this.setAnimation('idle')
     }
-    this.setAnimation = (name) => {
+    this.setAnimation = (name, cb = false) => {
 
         if(animation.current.name === name) {
             return;
@@ -309,10 +329,23 @@ function Player(options) {
         let c = animation.current;
         c.name = name;
         c.number = 1;
+        c.callback = cb;
     }
     this.attackOne = (data) => {
+        if(settings.skill_active) return;
+
         if(data === 1) {
-            _this.setAnimation('attack1')
+            let cb = {
+                done: function(msg) {
+                    settings.skill_active = false;
+                    $('.attack1').removeClass('disable');
+                    _this.setAnimation('idle');
+                }
+            };
+            _this.setAnimation('attack1', cb);
+            $('.attack1').addClass('disable');
+
+            settings.skill_active = true;
         }
     }
 
@@ -323,6 +356,60 @@ function Player(options) {
         mediator.subscribe(TRIGGER.MOVE_RIGHT, _this.moveRight.bind(this))
         mediator.subscribe(TRIGGER.ATTACK_ONE, _this.attackOne.bind(this))
         mediator.subscribe(TRIGGER.PLAYER_IDLE, _this.idle.bind(this))
+    }
+    init();
+}
+
+function Background(options) {
+
+    const mediator = options.mediator;
+    const TRIGGER = mediator.getTriggerTypes();
+    const NAMES = mediator.getNames();
+    const _this = this;
+
+    let animation = {
+        idle: {
+            url: '/animation/bg/',
+            postfix: '.png',
+            count: 1,
+            width: 9000,
+            height: 1265,
+            dheight: 1265,
+            dwidth: 0,
+        },
+        current: {
+            name: 'idle',
+            number: 1,
+            left: 0,
+            direction: NAMES.DIRECTION_RIGHT,
+            callback: false,
+        }
+    }
+
+    this.getAnimation = () => {
+        return animation;
+    }
+    this.idle = (data) => {
+        _this.setAnimation('idle')
+    }
+    this.setAnimation = (name, cb = false) => {
+
+        if(animation.current.name === name) {
+            return;
+        }
+
+        let c = animation.current;
+        c.name = name;
+        c.number = 1;
+        c.callback = cb;
+    }
+
+    function init() {
+        let canvas = mediator.callTrigger(TRIGGER.GET_CANVAS_SETTINGS, 1);
+        animation.idle.height = canvas.canvasHeight;
+        animation.idle.dheight = canvas.canvasHeight;
+
+        mediator.subscribe(TRIGGER.BACKGROUND_IDLE, _this.idle.bind(this))
     }
     init();
 }

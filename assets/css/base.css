@@ -115,8 +115,12 @@ button {
 	bottom: 30px;
 	z-index: 5;
 }
-game-panel-skills .disable {
+.game-panel-skills .disable {
 	opacity: .6;
+	cursor: default;
+}
+.game-panel-skills img {
+	cursor: pointer;
 }
 .game-panel-user {
 	left: 30px;
