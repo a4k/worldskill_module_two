@@ -697,6 +697,7 @@ function Elf(options) {
         hp: 30,
         maxHp: 30,
         canDamage: true,
+        isDead: false,
     };
     let animation = {
         idle: {
@@ -823,11 +824,11 @@ function Elf(options) {
     }
 
     this.purposeDamage = () => {
-        if(!person.canDamage) return;
+        if(!person.canDamage || person.isDead) return;
 
         let cb = {
             done: function() {
-                if(!person.canDamage) return;
+                if(!person.canDamage || person.isDead) return;
 
                 _this.setAnimation('idle')
             }
@@ -844,7 +845,7 @@ function Elf(options) {
     this.damage = (data) => {
         person.hp -= data.damage;
         if(person.hp <= 0) {
-            person.canDamage = false;
+            person.isDead = true;
             data.kills++;
             let cb = {
                 done: function() {

@@ -9,7 +9,11 @@
 	src: url(../fonts/SortsMillGoudy-Regular.ttf);
 }
 body {
+	width: 100vw;
+	height: 100vh;
 	font-family: SortsMillGoudy;
+	background: url(../img/bg-game.png);
+	background-size: cover;
 }
 ul,
 ol {
