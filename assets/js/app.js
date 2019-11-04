@@ -1,700 +1,1178 @@
-var app = {}; // Common container
+const mediator = new Mediator({triggers: SETTINGS.TRIGGER, names: SETTINGS.NAMES});
+const timer = new Timer({mediator});
+const game = new Game({mediator});
+const ui = new UI({mediator});
+const app = new App({mediator});
+const ranking = new Ranking({mediator});
 
-// Состояния
-app.States = {
-    game: 0,
-};
+function Mediator(options) {
 
-const NAMES = {
-    LEFT_SIDE: 'left_side',
-    RIGHT_SIDE: 'right_side',
-    ATTACK_SWORD: 'ATTACK_SWORD',
+    const TRIGGERS = options.triggers || {};
+    const NAMES = options.names || {};
+    const triggers = {};
 
-    PLAYER: 'player',
-    ENEMY: 'enemy',
-    BACKGROUND: 'background',
+    this.getNames = () => {
+        return NAMES
+    };
 
-    // animation
-    PLAYER_IDLE: 'idle',
-    PLAYER_RUN: 'run',
-    PLAYER_ATTACK: 'attack1',
-    BACKGROUND_IDLE: 'idle',
+    this.getTriggerTypes = () => {
+        return TRIGGERS
+    };
 
-    // callback
-    MOVE: 'MOVE',
-    MOVE_END: 'MOVE_END',
-    CHANGE_SIDE: 'CHANGE_SIDE',
-    DRAW_SPRITE: 'DRAW_SPRITE',
-    REGISTER: 'REGISTER',
-    FINISH: 'FINISH',
-    UPDATE_TIMER: 'UPDATE_TIMER',
-    MAP_END: 'MAP_END',
+    this.callTrigger = (name, data) => {
+        if(triggers[name] && triggers[name] instanceof Function) {
+            return triggers[name](data)
+        }
+        return null
+    }
 
-    //tabs
-    TAB_GAME: '.screen-game',
-    TAB_RANK: '.screen-ranking',
-    SHOW: 'show',
-    TIMER_VALUE: '.timer-value',
-};
+    this.subscribe = (name, _func) => {
+        if(name && _func instanceof Function) {
+            triggers[name] = _func
+        }
+    }
 
-const SPRITES = {
-    player: {
+    function init() {
+        $.each(TRIGGERS, function (key, value) {
+            triggers[key] = () => {return null}
+        })
+    }
+
+    init();
+}
+
+function App(options) {
+    const mediator = options.mediator;
+    const TRIGGER = mediator.getTriggerTypes();
+    const _this = this;
+
+
+    this.tabChange = (tabName) => {
+        $('.screen').hide();
+        $(tabName).show();
+    }
+    this.register = (username) => {
+        let obj = new Player({mediator, username});
+        mediator.callTrigger(TRIGGER.START_GAME, true)
+        mediator.callTrigger(TRIGGER.START_TIMER, true)
+        mediator.callTrigger(TRIGGER.ADD_OBJECT, obj)
+
+    }
+    function init() {
+        mediator.subscribe(TRIGGER.REGISTER, _this.register.bind(this))
+        mediator.subscribe(TRIGGER.TAB_CHANGE, _this.tabChange.bind(this))
+
+
+        mediator.callTrigger(TRIGGER.REGISTER, 'sdf')
+        mediator.callTrigger(TRIGGER.TAB_CHANGE, '.screen-game')
+    }
+    init();
+}
+
+function Game(options) {
+    const mediator = options.mediator;
+    const TRIGGER = mediator.getTriggerTypes();
+    const _this = this;
+
+    let objects = [],
+        enemies = false,
+        isPower = false,
+        canvas = document.getElementById('game-canvas'),
+        ctx = canvas.getContext('2d');
+
+    let settings = {
+        canvasWidth: $(document).width(),
+        canvasHeight: $(document).height(),
+        canvasLeft: 0,
+    };
+    let resource = {
+        cache: {},
+    };
+
+    this.addObject = (obj) => {
+        objects.push(obj)
+    };
+    this.startGame = (data) => {
+        isPower = data;
+        canvas.width = settings.canvasWidth;
+        canvas.height = settings.canvasHeight;
+
+        enemies = new EnemyManager({mediator});
+        objects.push(new Background({mediator}));
+
+        this.updateScene();
+    }
+    this.endGame = (data) => {
+        isPower = false;
+        mediator.callTrigger(TRIGGER.STOP_TIMER, true)
+        mediator.callTrigger(TRIGGER.RANKING, data)
+    }
+    this.updateScene = () => {
+        if(isPower) {
+            ctx.clearRect(0, 0, settings.canvasWidth, settings.canvasHeight);
+
+            let enObj = enemies.getObjects();
+            let arObj = objects.concat(enObj);
+
+            $.each(arObj, function(k, v) {
+                _this.drawObject(v)
+            })
+
+            let playerPerson = mediator.callTrigger(TRIGGER.GET_PLAYER_PERSON);
+            $('.kills-value').text(playerPerson.kills);
+
+            setTimeout(_this.updateScene.bind(_this), 50)
+        }
+    }
+    this.drawObject = (obj) => {
+        let animations = obj.getAnimation();
+        let current = animations.current;
+        let animation = animations[current.name];
+        let url = animation.url + current.number + animation.postfix;
+
+
+        let nextAnimation = function() {
+            if(current.number === animation.count) {
+                if(current.callback && current.callback.hasOwnProperty('done')) {
+                    current.callback.done(animation.count);
+                }
+                current.number = 1;
+            } else {
+                current.number++;
+            }
+        }
+        let draw = function(image) {
+            nextAnimation();
+            animation.dwidth = animation.width / (animation.height / animation.dheight);
+            let dy = settings.canvasHeight - animation.dheight;
+            if(current.hasOwnProperty('top')) {
+                dy -= current.top;
+            }
+
+            let cleft = current.left;
+
+            if(typeof obj.isSceneObject === "function") {
+                if(obj.isSceneObject()) {
+                    cleft -= settings.canvasLeft;
+                }
+            }
+
+            ctx.save();
+            ctx.translate(cleft, dy);
+            ctx.scale(current.direction, 1);
+
+            ctx.drawImage(image, 0, 0, animation.dwidth * current.direction, animation.dheight);
+
+            ctx.restore();
+
+        }
+
+        let image;
+        if(resource.cache[url]) {
+            image = resource.cache[url];
+            draw(image);
+        } else {
+            image = new Image();
+            image.onload = function() {
+                resource.cache[url] = image;
+                draw(image);
+            }
+            resource.cache[url] = false;
+            image.src = url;
+        }
+
+    }
+
+    this.getCanvasSettings = (data) => {
+        return settings;
+    }
+
+
+    function init() {
+        mediator.subscribe(TRIGGER.ADD_OBJECT, _this.addObject.bind(this))
+        mediator.subscribe(TRIGGER.START_GAME, _this.startGame.bind(this))
+        mediator.subscribe(TRIGGER.END_GAME, _this.endGame.bind(this))
+        mediator.subscribe(TRIGGER.GET_CANVAS_SETTINGS, _this.getCanvasSettings.bind(this))
+
+    }
+    init();
+}
+
+function UI(options) {
+
+    const mediator = options.mediator;
+    const TRIGGER = mediator.getTriggerTypes();
+    const _this = this;
+
+    let keys = {
+        LEFT: 65,
+        RIGHT: 68,
+        ONE: 49,
+    };
+
+    function init() {
+        $('#register').on('submit', function() {
+            let username = $('.username-input').val();
+            if(username.length > 0) {
+                mediator.callTrigger(TRIGGER.REGISTER, username)
+                mediator.callTrigger(TRIGGER.TAB_CHANGE, '.screen-game')
+            }
+            return false;
+        })
+        $(document).on('keydown', function(e) {
+            let keyCode = e.keyCode;
+            switch (keyCode) {
+                case keys.LEFT:
+                    mediator.callTrigger(TRIGGER.MOVE_LEFT, 1)
+                    break;
+                case keys.RIGHT:
+                    mediator.callTrigger(TRIGGER.MOVE_RIGHT, 1)
+                    break;
+                case keys.ONE:
+                    mediator.callTrigger(TRIGGER.ATTACK_ONE, 1)
+                    break;
+            }
+        })
+        $(document).on('keyup', function(e) {
+
+            mediator.callTrigger(TRIGGER.PLAYER_IDLE, 1)
+        })
+        $('.attack1').on('click', function (e) {
+            let t = $(e.target);
+            if(t.hasClass('disable')) return false;
+
+            mediator.callTrigger(TRIGGER.ATTACK_ONE, 1)
+        })
+    }
+    init();
+}
+
+function Player(options) {
+
+    const mediator = options.mediator;
+    const TRIGGER = mediator.getTriggerTypes();
+    const NAMES = mediator.getNames();
+    const _this = this;
+
+    let username = options.username;
+    let settings = {
+        skill_active: false,
+    };
+
+    let person = {
+        damage: 15,
+        hp: 100,
+        mp: 100,
+        maxHp: 100,
+        maxMp: 100,
+        kills: 0,
+    }
+    let animation = {
         idle: {
             url: '/animation/knight/idle/',
+            postfix: '.png',
             count: 18,
             width: 1068,
             height: 1265,
             dheight: 355,
+            dwidth: 0,
         },
         run: {
             url: '/animation/knight/run/',
+            postfix: '.png',
             count: 17,
             width: 1372,
             height: 1347,
             dheight: 355,
+            dwidth: 0,
         },
         attack1: {
             url: '/animation/knight/attack1/',
+            postfix: '.png',
             count: 21,
-            width: 1372,
+            width: 1965,
             height: 1265,
             dheight: 355,
+            dwidth: 0,
         },
-    },
-    background: {
-        idle: {
-            url: '/assets/img/bg-game.png',
-            count: 1,
-            width: 1068,
-            height: 1265,
-            dheight: 355,
-        },
-    }
-};
-
-
-// Приложение
-var Application = (function () {
-
-    let container = $('body');
-
-    return {
-        start: function () {
-            // Ожидание регистрации
-            app.Register.start(this.onCallback.bind(this));
-        },
-
-        // При получении события из игры
-        onCallback: function (type, value) {
-            switch(type) {
-
-                // При регистрации
-                case NAMES.REGISTER:
-
-                    let username = value;
-                    this.switchTab(NAMES.TAB_GAME);
-                    app.Game.start(username, this.onCallback.bind(this));
-
-                    break;
-                case NAMES.FINISH:
-                    this.switchTab(NAMES.TAB_RANK);
-                    break;
-            }
-
-        },
-
-        switchTab: function (tabName) {
-            container.find('.screen').removeClass(NAMES.SHOW);
-
-            $(tabName).addClass(NAMES.SHOW);
-        }
-    };
-}());
-
-// Регистрация
-app.Register = (function () {
-
-    let container = $(document).find('#register'),
-        input = container.find('.username-input'),
-        callback = false;
-
-    return {
-        start: function (cb = false) {
-            callback = cb;
-            container.on('submit', this.onSubmitForm.bind(this));
-
-            this.testData();
-        },
-
-        testData: function () {
-            input.val('sdf');
-
-            container.trigger('submit');
-        },
-
-        onSubmitForm: function (e) {
-            e.preventDefault();
-
-            let username = input.val();
-
-            if (callback) {
-                callback(NAMES.REGISTER, username);
-            }
-
-            return false;
-        }
-
-    };
-}());
-
-// Игра
-app.Game = (function () {
-
-    let callback = false,
-        objects = [],
-
-        gameCanvas = document.getElementById('game-canvas'),
-        ctx = gameCanvas.getContext('2d'),
-
-        canvas = {
-            width: $(document).width(),
-            height: $(document).height(),
+        current: {
+            name: 'idle',
+            number: 1,
             left: 0,
-            maxLeft: 3000,
-        },
-
-        result = {
-            time: 0,
-            final_time: 0,
-        },
-
-        settings = {
-            states: {
-                PLAYING: 1,
-                STOP: 2,
-            },
-            UPDATE_TIMEOUT: 50,
-        };
-
-    return {
-        start: function (username, cb = false) {
-            callback = cb;
-
-            this.setState(settings.states.PLAYING);
-            this.add(NAMES.BACKGROUND, username);
-            this.add(NAMES.PLAYER, username);
-
-            gameCanvas.width = canvas.width;
-            gameCanvas.height = canvas.height;
-
-            app.SpriteManager.init(this.onCallback.bind(this));
-            app.Timer.start(this.onCallback.bind(this));
-            app.GameUI.init(this.onCallback.bind(this));
-
-            setInterval(() => {
-                requestAnimationFrame(this.updateScene.bind(this));
-            }, settings.UPDATE_TIMEOUT);
-        },
-
-        // Установить состояния
-        setState: function (state) {
-            app.States.game = state;
-        },
-
-        // Получить состояние
-        getState: function () {
-            return app.States.game;
-        },
-
-        // Добавление объекта на сцену
-        add: function (type, name) {
-
-            switch (type) {
-                case NAMES.PLAYER:
-                    let player = new Player().setName(name);
-                    objects.push(player);
-                    player.initMover();
-                    break;
-                case NAMES.BACKGROUND:
-
-                    let s = SPRITES[NAMES.BACKGROUND][NAMES.BACKGROUND_IDLE];
-                    s.width = canvas.width;
-                    s.height = canvas.height;
-                    s.dheight = s.height;
-
-                    let bg = new Background().setName(name);
-                    objects.push(bg);
-                    break;
-                case NAMES.ENEMY:
-
-                    break;
-            }
-        },
-
-        onCallback: function(key, value) {
-            switch (key) {
-                case NAMES.DRAW_SPRITE:
-                    this.draw(value);
-                    break;
-                case NAMES.UPDATE_TIMER:
-                    this.renderTimer(value);
-                    break;
-                case NAMES.MAP_END:
-                    this.finish(value);
-                    break;
-                case NAMES.ATTACK_SWORD:
-                    objects.map(function(v, i) {
-                        if(v instanceof Player) {
-                            v.attackSword(value);
-                        }
-                    });
-                    break;
-            }
-        },
-
-        // Обновление сцены
-        updateScene: function () {
-            let _this = this;
-
-            if (this.getState() === settings.states.STOP) return;
-
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // Обработка объектов сцены
-            objects.map(function (value, i) {
-                let isPlayer = value instanceof Player;
-                let isBg = value instanceof Background;
-
-                let animation = value.getAnimation(),
-                    position = value.getPosition();
-
-                let params = $.extend({}, animation, position);
-                if (isPlayer) {
-                    params.objectType = NAMES.PLAYER;
-                    position = _this.calcPlayerPosition(position);
-                    params = $.extend({}, params, position);
-                }
-                if(isBg) {
-                    params.objectType = NAMES.BACKGROUND;
-                    position = _this.calcBackgroundPosition(position);
-                    params = $.extend({}, params, position);
-                }
-
-                app.SpriteManager.draw(params);
-            });
-
-
-        },
-
-        // Посчитать позицию игрока
-        calcPlayerPosition: function (position, callback) {
-            let center = canvas.width / 2;
-            let isMiddle = position.x > center;
-            let isEnd = position.x >= canvas.maxLeft;
-
-            if(isEnd) {
-                if(position.x > canvas.width - 300) {
-                    this.onCallback(NAMES.MAP_END, true)
-                }
-
-            } else if(isMiddle) {
-                let pLeft = position.x - center;
-                position.x -= pLeft;
-                canvas.left = pLeft;
-            }
-            return position;
-        },
-
-        // Посчитать позицию фона
-        calcBackgroundPosition: function (position) {
-            position.sx = canvas.left;
-            return position;
-        },
-
-        // Отрисовка спрайта
-        draw: function(params) {
-            let info = params.info;
-            let topOffset = canvas.height - info.dheight;
-
-            let sx = params.sx || 0;
-            ctx.drawImage(info.sprite, sx, 0, info.width, info.height, params.x, topOffset, info.dwidth, info.dheight);
-
-        },
-
-        // Вывод времени в формате mm:ss
-        renderTimer: function(value) {
-            let finalTime = app.Timer.getFinalTime(value);
-
-            $(NAMES.TIMER_VALUE).text(finalTime);
-        },
-
-        finish: function (value) {
-            if(this.getState() === settings.states.PLAYING) {
-                this.setState(settings.states.STOP);
-
-                result.time = app.Timer.get();
-                result.final_time = app.Timer.getFinalTime(result.time);
-                app.Timer.stop();
-                callback(NAMES.FINISH, value)
-            }
-        },
-
-    };
-}());
-
-// Управление спрайтами
-app.SpriteManager = (function () {
-    let callback = false,
-
-        frames = {}, // хранение текущего кадра
-        cache = {}, // кэш для спрайтов
-        settings = {};
-
-    return {
-        init: function(cb) {
-            callback = cb;
-        },
-
-        draw: function (params) {
-
-            let animationType = params.animationType,
-                objectType = params.objectType,
-                _this = this;
-
-            if (!frames.hasOwnProperty(objectType)) {
-                frames[objectType] = {};
-            }
-
-            let objFrames = frames[objectType];
-
-            if (!objFrames.hasOwnProperty(animationType)) {
-                objFrames[animationType] = {
-                    number: 1,
-                };
-            }
-
-            objFrames.X = params.x;
-            objFrames.Y = params.y;
-            params.number = objFrames[animationType].number;
-            params.info = this.getSprite(params);
-
-
-            let url = this.getSpriteUrl(params);
-
-            let spriteCache = this.getCacheSprite(url);
-            if (spriteCache) {
-                this.drawOnScene(params);
-
-            } else {
-                spriteCache = new Image();
-                spriteCache.src = url;
-                spriteCache.onload = function () {
-                    _this.drawOnScene(params);
-                };
-
-                this.setCacheSprite(url, spriteCache);
-            }
-
-            objFrames[animationType].image = spriteCache;
-
-            this.nextImage(params);
-        },
-
-        // Получение ссылки на спрайт
-        getSpriteUrl: function(arParams) {
-            let sprite = arParams.info;
-
-            if(sprite.hasOwnProperty('count') && sprite.count === 1) {
-                return sprite.url;
-            }
-            return sprite.url + arParams.number + '.png';
-        },
-
-        // Получение спрайта
-        getSprite: function (params) {
-            return SPRITES[params.objectType][params.animationType];
-        },
-
-        // Получить спрайт из кэша
-        getCacheSprite: function(url) {
-            if (cache.hasOwnProperty(url)) {
-                return cache[url];
-            }
-            return false;
-        },
-
-        // Отрисовать на сцене
-        drawOnScene: function(params) {
-
-            let spriteInfo = params.info;
-
-            params.info.sprite = this.getCacheImage(params);
-            params.info.dwidth = spriteInfo.width / (spriteInfo.height / spriteInfo.dheight);
-
-            callback(NAMES.DRAW_SPRITE, params);
-        },
-
-        getCacheImage: function(params) {
-            return frames[params.objectType][params.animationType].image;
-        },
-
-        // Получение координат объекта
-        getPosition: function(objectType) {
-            let object = frames[objectType];
-            return {
-                x: object.X,
-                y: object.Y,
-            }
-        },
-
-        // Сохранить спрайт в кэш
-        setCacheSprite: function(url, value) {
-            cache[url] = value;
-        },
-
-        // Получение ссылки на спрайт
-        nextImage: function(params) {
-
-            let frame = frames[params.objectType][params.animationType],
-                sprite = this.getSprite(params);
-
-            if (frame.number >= sprite.count) {
-                frame.number = 1;
-                return;
-            }
-            frame.number++;
-
-        },
-    }
-}());
-
-// Таймер
-app.Timer = (function() {
-    let timer = 0,
-        callback = false,
-        object = false,
-        enabled = false;
-
-    return {
-        start: function(cb) {
-            if(enabled) return;
-            if(cb) callback = cb;
-
-            let _this = this;
-            object = setInterval(function () {
-                _this.update();
-            }, 1000);
-        },
-        update: function() {
-            timer++;
-            if(callback) {
-                callback(NAMES.UPDATE_TIMER, timer);
-            }
-        },
-        pause: function() {
-            enabled = false;
-            clearInterval(object);
-        },
-        stop: function() {
-            this.pause();
-            timer = 0;
-        },
-        get: function() {
-            return timer;
-        },
-        getFinalTime: function(value) {
-            let finalTime = '';
-            if(value > 60) {
-                let hours = Math.round(value / 60),
-                    minutes = value - hours * 60;
-                finalTime = hours + ':' + minutes;
-            } else {
-                if(value < 10) {
-                    finalTime = '00:0' + value;
-                } else {
-                    finalTime = '00:' + value;
-                }
-            }
-            return finalTime;
-        },
-    };
-})();
-
-// Фон
-function Background() {
-
-    let name,
-
-        animation = {
-            x: 0,
-            y: 0,
-            animationType: NAMES.BACKGROUND_IDLE,
-            side: NAMES.RIGHT_SIDE,
-        },
-
-        settings = {
-            sx: 0,
-            x: 0,
-            y: 0,
-        };
-
-    this.setName = function (uname) {
-        name = uname;
-
-        return this;
-    };
-    this.getAnimation = () => {
-        return Object.assign({}, animation);
-    };
-    this.getPosition = () => {
-        return {x: settings.x, y: settings.y};
-    };
-}
-
-// Игрок
-function Player() {
-
-    let name,
-
-        animation = {
-            x: 0,
-            y: 0,
-            animationType: NAMES.PLAYER_IDLE,
-            side: NAMES.RIGHT_SIDE,
-        },
-        mover = {},
-
-        settings = {
-            x: 0,
-            y: 0,
-        };
-
-    this.setName = function (uname) {
-
-        name = uname;
-
-        return this;
-    };
-    this.getAnimation = () => {
-        return Object.assign({}, animation);
-    };
-    this.getPosition = () => {
-        return {x: settings.x, y: settings.y};
-    };
-
-    this.initMover = () => {
-        mover = new PlayerMove();
-        mover.setXY(settings.x, settings.y);
-        mover.init(this.onCallback.bind(this));
-    };
-    this.attackSword = (value) => {
-        mover.attackSword();
-        setTimeout(function() {
-            mover.idle();
-        }, 1000)
-    };
-    this.onCallback = (key, value) => {
-        switch (key) {
-            case NAMES.MOVE:
-                animation.animationType = NAMES.PLAYER_RUN;
-                settings.x = value.x;
-                break;
-            case NAMES.CHANGE_SIDE:
-                animation.side = value;
-                break;
-            case NAMES.MOVE_END:
-                animation.animationType = NAMES.PLAYER_IDLE;
-                break;
-            case NAMES.ATTACK_SWORD:
-                animation.animationType = NAMES.PLAYER_ATTACK;
-                break;
+            direction: NAMES.DIRECTION_RIGHT,
+            callback: false,
         }
     }
+
+    this.getAnimation = () => {
+        return animation;
+    }
+    this.getPerson = () => {
+        return person;
+    }
+    this.moveLeft = (data) => {
+        if(data === 1) {
+            _this.move(-10, NAMES.DIRECTION_LEFT)
+        }
+    }
+    this.moveRight = (data) => {
+        if(data === 1) {
+            _this.move(10, NAMES.DIRECTION_RIGHT)
+        }
+    }
+    this.move = (data, direction = false) => {
+        if(settings.skill_active) return;
+
+        let c = animation.current;
+
+        let canvas = mediator.callTrigger(TRIGGER.GET_CANVAS_SETTINGS, 1);
+
+        if (c.left > canvas.canvasWidth / 2 - 100) {
+            if (canvas.canvasLeft < 0) {
+                c.left += data;
+            }
+            if (canvas.canvasLeft > NAMES.MAX_CANVAS_WIDTH) {
+                c.left += data;
+            } else {
+                canvas.canvasLeft += data;
+            }
+        } else {
+            if (canvas.canvasLeft > 0) {
+                canvas.canvasLeft += data;
+            } else {
+                c.left += data;
+            }
+        }
+        if (c.left < 0) {
+            c.left = 0;
+        }
+        if (c.left > canvas.canvasWidth - 100) {
+            mediator.callTrigger(TRIGGER.END_GAME, {})
+        }
+        if(direction) {
+            c.direction = direction;
+        }
+        _this.setAnimation('run')
+
+        mediator.callTrigger(TRIGGER.UPDATE_PURPOSE);
+    }
+    this.idle = (data) => {
+        if(settings.skill_active) return;
+
+        _this.setAnimation('idle')
+    }
+    this.setAnimation = (name, cb = false) => {
+
+        if(animation.current.name === name) {
+            return;
+        }
+
+        let c = animation.current;
+        c.name = name;
+        c.number = 1;
+        c.callback = cb;
+    }
+    this.attackOne = (data) => {
+        if(settings.skill_active) return;
+
+        if(data === 1) {
+            let cb = {
+                done: function(msg) {
+                    settings.skill_active = false;
+                    $('.attack1').removeClass('disable');
+                    _this.setAnimation('idle');
+
+                    let enemies = mediator.callTrigger(TRIGGER.GET_ENEMIES);
+                    let canvas = mediator.callTrigger(TRIGGER.GET_CANVAS_SETTINGS);
+
+                    $.each(enemies, function (k, v) {
+                        if(v) {
+                            let enemy = v.getAnimation();
+                            let myLeft = animation.current.left;
+                            let enemyLeft = enemy.current.left - canvas.canvasLeft;
+                            if(animation.current.direction === NAMES.DIRECTION_RIGHT) {
+                                if(enemyLeft < myLeft + 600 && enemyLeft > myLeft - 200) {
+                                    v.damage(_this.getPerson());
+                                }
+                            } else {
+                                if(enemyLeft > myLeft - 600 && enemyLeft < myLeft + 200) {
+                                    v.damage(_this.getPerson());
+                                }
+                            }
+                        }
+                    })
+                }
+            };
+            _this.setAnimation('attack1', cb);
+            $('.attack1').addClass('disable');
+
+            settings.skill_active = true;
+
+        }
+    }
+    this.damage = (data) => {
+        person.hp -= data.damage;
+        let percent = Math.round(person.hp / person.maxHp * 100);
+
+        let hp = $('.panel-xp');
+        hp.find('span').text(person.hp);
+        hp.find('.score-value').css({width: percent + '%'});
+        if(person.hp <= 0) {
+            mediator.callTrigger(TRIGGER.END_GAME, {})
+        }
+    }
+
+    function init() {
+        $('.user-info').html(username)
+
+        mediator.subscribe(TRIGGER.MOVE_LEFT, _this.moveLeft.bind(this))
+        mediator.subscribe(TRIGGER.MOVE_RIGHT, _this.moveRight.bind(this))
+        mediator.subscribe(TRIGGER.ATTACK_ONE, _this.attackOne.bind(this))
+        mediator.subscribe(TRIGGER.PLAYER_IDLE, _this.idle.bind(this))
+        mediator.subscribe(TRIGGER.PLAYER_DAMAGE, _this.damage.bind(this))
+        mediator.subscribe(TRIGGER.GET_PLAYER_ANIMATION, _this.getAnimation.bind(this))
+        mediator.subscribe(TRIGGER.GET_PLAYER_PERSON, _this.getPerson.bind(this))
+    }
+    init();
 }
 
-function PlayerMove() {
-    let KEY = {
-            LEFT: 65,
-            RIGHT: 68,
-            ONE: 49,
+function EnemyManager(options) {
+
+    const mediator = options.mediator;
+    const TRIGGER = mediator.getTriggerTypes();
+    const NAMES = mediator.getNames();
+    const _this = this;
+
+    let objects = [];
+    let settings = {
+        canUpdate: true,
+        purpose: {},
+        maxObjects: 0,
+        maxEnemyLevel: 0,
+        maxSceneObjects: 10,
+    };
+
+    this.updateEnemyLevel = (data) => {
+        let player = mediator.callTrigger(TRIGGER.GET_PLAYER_PERSON);
+        let level = player.kills;
+
+        if(level < 2) {
+            settings.maxObjects = 1;
+            settings.maxEnemyLevel = 1;
+        } else {
+            settings.maxObjects = level;
+            if(settings.maxObjects > settings.maxSceneObjects) {
+                settings.maxObjects = settings.maxSceneObjects;
+            }
+            if(settings.maxObjects > 5) {
+                settings.maxEnemyLevel = 3;
+            } else if(settings.maxObjects > 3) {
+                settings.maxEnemyLevel = 2;
+            } else {
+                settings.maxEnemyLevel = 1;
+            }
+        }
+    }
+
+    this.getPurpose = () => {
+        let player = mediator.callTrigger(TRIGGER.GET_PLAYER_ANIMATION);
+        return {x: player.current.left};
+    }
+
+    this.render = () => {
+
+        this.addEnemyIfNeed();
+        this.updatePurpose();
+        this.moveEnemy();
+
+        if(!settings.canUpdate) return false;
+
+        setTimeout(() => {
+            _this.render();
+        });
+    }
+
+    this.addEnemyIfNeed = () => {
+        if(objects.length < settings.maxObjects) {
+            let randLevel = Math.floor(Math.random() * settings.maxEnemyLevel) + 1;
+            switch (randLevel) {
+                case 1:
+                    this.addObject(new Dog({mediator}));
+                    break;
+                case 2:
+                    this.addObject(new Elf({mediator}));
+                    break;
+                case 3:
+                    this.addObject(new Greench({mediator}));
+                    break;
+            }
+        }
+    }
+
+    this.updatePurpose = () => {
+        settings.purpose = this.getPurpose();
+    }
+
+    this.moveEnemy = () => {
+        $.each(objects, function(k, v) {
+            v.moveToPurpose(settings.purpose);
+        })
+    }
+
+    this.addObject = (obj) => {
+        let canvas = mediator.callTrigger(TRIGGER.GET_CANVAS_SETTINGS);
+        let x = Math.floor(Math.random() * 400) + 1;
+        obj.setPosition(canvas.canvasLeft + canvas.canvasWidth + x);
+        let a = obj.getAnimation();
+        objects.push(obj);
+    }
+    this.getObjects = () => {
+        return objects;
+    }
+    this.destroyEnemy = (data) => {
+        $.each(objects, function (k, v) {
+            if(v) {
+                let p = v.getPerson();
+                if(p.id === data.id) {
+                    objects.splice(k, 1);
+                }
+            }
+        })
+        this.updateEnemyLevel();
+    }
+
+
+    function init() {
+        mediator.subscribe(TRIGGER.UPDATE_ENEMY_LEVEL, _this.updateEnemyLevel.bind(this))
+        mediator.subscribe(TRIGGER.GET_ENEMIES, _this.getObjects.bind(this))
+        mediator.subscribe(TRIGGER.UPDATE_PURPOSE, _this.updatePurpose.bind(this))
+        mediator.subscribe(TRIGGER.DESTROY_ENEMY, _this.destroyEnemy.bind(this))
+
+        _this.updateEnemyLevel()
+        _this.render();
+    }
+    init();
+}
+
+function Dog(options) {
+
+    const mediator = options.mediator;
+    const TRIGGER = mediator.getTriggerTypes();
+    const NAMES = mediator.getNames();
+    const _this = this;
+
+    let person = {
+        id: 0,
+        damage: 2,
+        hp: 15,
+        maxHp: 15,
+        canDamage: true,
+    };
+    let animation = {
+        run: {
+            url: '/animation/dog/run/',
+            postfix: '.png',
+            count: 8,
+            width: 128,
+            height: 85,
+            dheight: 85,
+            dwidth: 0,
         },
-        callback = false,
-        settings = {
-            speed: 10,
-            x: 0,
-            y: 0,
+        current: {
+            name: 'run',
+            number: 1,
+            left: 0,
+            top: 0,
+            direction: NAMES.DIRECTION_RIGHT,
+            callback: false,
+        }
+    }
+
+    this.getAnimation = () => {
+        return animation;
+    }
+    this.getPerson = () => {
+        return person;
+    }
+    this.isSceneObject = () => {
+        return true;
+    }
+    this.moveLeft = (data) => {
+        if(data === 1) {
+            _this.move(-10, NAMES.DIRECTION_LEFT)
+        } else {
+            _this.move(data, NAMES.DIRECTION_LEFT)
+        }
+    }
+    this.moveRight = (data) => {
+        if(data === 1) {
+            _this.move(10, NAMES.DIRECTION_RIGHT)
+        } else {
+            _this.move(data, NAMES.DIRECTION_RIGHT)
+        }
+    }
+    this.setPosition = (data, direction = false) => {
+        let c = animation.current;
+        c.left = data;
+        if(direction) {
+            c.direction = direction;
+        }
+        _this.setAnimation('run')
+    }
+    this.move = (data, direction = false) => {
+        let c = animation.current;
+
+        c.left += data;
+        if(direction) {
+            c.direction = direction;
+        }
+        _this.setAnimation('run')
+    }
+    this.run = (data) => {
+        _this.setAnimation('run')
+    }
+    this.setAnimation = (name, cb = false) => {
+
+        if(animation.current.name === name) {
+            return;
+        }
+
+        let c = animation.current;
+        c.name = name;
+        c.number = 1;
+        c.callback = cb;
+    }
+
+    this.moveToPurpose = (data) => {
+        let canvas = mediator.callTrigger(TRIGGER.GET_CANVAS_SETTINGS);
+        let cleft = canvas.canvasLeft;
+        if (!cleft) cleft = 0;
+
+        let purposeLeft = cleft + data.x;
+
+        let c = animation.current;
+        if(c.left < purposeLeft + 200 && c.left > purposeLeft - 50) {
+            this.purposeDamage();
+            return;
+        }
+        if(purposeLeft > c.left) {
+            this.moveRight(0.5);
+        } else if(purposeLeft < c.left) {
+            this.moveLeft(-0.5);
+        }
+        this.setAnimation('run')
+    }
+
+    this.purposeDamage = () => {
+        if(!person.canDamage) return;
+
+        person.canDamage = false;
+        setTimeout(() => {
+            person.canDamage = true;
+        }, 1000);
+        mediator.callTrigger(TRIGGER.PLAYER_DAMAGE, _this.getPerson());
+    }
+
+    this.damage = (data) => {
+        person.hp -= data.damage;
+        if(person.hp <= 0) {
+            data.kills++;
+            mediator.callTrigger(TRIGGER.DESTROY_ENEMY, _this.getPerson());
+        }
+    }
+
+    function init() {
+
+        person.id = Math.floor(Math.random() * 100000) + 1;
+        animation.current.top = Math.floor(Math.random() * 20) + 1;
+        mediator.subscribe(TRIGGER.DOG_MOVE_LEFT, _this.moveLeft.bind(this))
+        mediator.subscribe(TRIGGER.DOG_MOVE_RIGHT, _this.moveRight.bind(this))
+        mediator.subscribe(TRIGGER.DOG_RUN, _this.run.bind(this))
+    }
+    init();
+}
+
+function Elf(options) {
+
+    const mediator = options.mediator;
+    const TRIGGER = mediator.getTriggerTypes();
+    const NAMES = mediator.getNames();
+    const _this = this;
+
+    let person = {
+        id: 0,
+        damage: 5,
+        hp: 30,
+        maxHp: 30,
+        canDamage: true,
+        isDead: false,
+    };
+    let animation = {
+        idle: {
+            url: '/animation/elf/idle/',
+            postfix: '.png',
+            count: 20,
+            width: 341,
+            height: 778,
+            dheight: 350,
+            dwidth: 0,
+        },
+        run: {
+            url: '/animation/elf/run/',
+            postfix: '.png',
+            count: 20,
+            width: 592,
+            height: 794,
+            dheight: 350,
+            dwidth: 0,
+        },
+        die: {
+            url: '/animation/elf/die/',
+            postfix: '.png',
+            count: 20,
+            width: 1256,
+            height: 855,
+            dheight: 350,
+            dwidth: 0,
+        },
+        attack: {
+            url: '/animation/elf/attack/',
+            postfix: '.png',
+            count: 20,
+            width: 490,
+            height: 797,
+            dheight: 350,
+            dwidth: 0,
+        },
+        current: {
+            name: 'idle',
+            number: 1,
+            left: 0,
+            top: 0,
+            direction: NAMES.DIRECTION_RIGHT,
+            callback: false,
+        }
+    }
+
+    this.getAnimation = () => {
+        return animation;
+    }
+    this.getPerson = () => {
+        return person;
+    }
+    this.isSceneObject = () => {
+        return true;
+    }
+    this.moveLeft = (data) => {
+        if(data === 1) {
+            _this.move(-10, NAMES.DIRECTION_LEFT)
+        } else {
+            _this.move(data, NAMES.DIRECTION_LEFT)
+        }
+    }
+    this.moveRight = (data) => {
+        if(data === 1) {
+            _this.move(10, NAMES.DIRECTION_RIGHT)
+        } else {
+            _this.move(data, NAMES.DIRECTION_RIGHT)
+        }
+    }
+    this.setPosition = (data, direction = false) => {
+        let c = animation.current;
+        c.left = data;
+        if(direction) {
+            c.direction = direction;
+        }
+        _this.setAnimation('idle')
+    }
+    this.move = (data, direction = false) => {
+        let c = animation.current;
+
+        c.left += data;
+        if(direction) {
+            c.direction = direction;
+        }
+        _this.setAnimation('run')
+    }
+    this.run = (data) => {
+        _this.setAnimation('run')
+    }
+    this.idle = (data) => {
+        _this.setAnimation('idle')
+    }
+    this.setAnimation = (name, cb = false) => {
+
+        if(animation.current.name === name) {
+            return;
+        }
+
+        let c = animation.current;
+        c.name = name;
+        c.number = 1;
+        c.callback = cb;
+    }
+
+    this.moveToPurpose = (data) => {
+        let canvas = mediator.callTrigger(TRIGGER.GET_CANVAS_SETTINGS);
+        let cleft = canvas.canvasLeft;
+        if (!cleft) cleft = 0;
+
+        let purposeLeft = cleft + data.x;
+
+        let c = animation.current;
+        if(c.left < purposeLeft + 200 && c.left > purposeLeft - 50) {
+            this.purposeDamage();
+            return;
+        }
+        if(purposeLeft > c.left) {
+            this.moveRight(0.5);
+        } else if(purposeLeft < c.left) {
+            this.moveLeft(-0.5);
+        }
+    }
+
+    this.purposeDamage = () => {
+        if(!person.canDamage || person.isDead) return;
+
+        let cb = {
+            done: function() {
+                if(!person.canDamage || person.isDead) return;
+
+                _this.setAnimation('idle')
+            }
         };
+        this.setAnimation('attack', cb)
 
-    return {
-        init: function (cb) {
-            callback = cb;
-
-            $(document).on('keydown', this.onKeyDown.bind(this));
-            $(document).on('keyup', this.onKeyUp.bind(this));
-        },
-        setXY: function (x, y) {
-            settings.x = x;
-            settings.y = y;
-        },
-        onKeyDown: function (e) {
-            let code = e.keyCode;
-
-            console.log(code);
-
-            switch (code) {
-                case KEY.LEFT:
-                    this.moveLeft();
-                    break;
-                case KEY.RIGHT:
-                    this.moveRight();
-                    break;
-                case KEY.ONE:
-                    this.attackSword();
-                    break;
-            }
-        },
-        onKeyUp: function (e) {
-            if (callback) {
-                this.idle();
-            }
-        },
-        idle: function() {
-            callback(NAMES.MOVE_END, false);
-        },
-        moveLeft: function () {
-            callback(NAMES.CHANGE_SIDE, NAMES.LEFT_SIDE);
-            this.move(settings.speed * -1)
-        },
-        moveRight: function () {
-            callback(NAMES.CHANGE_SIDE, NAMES.RIGHT_SIDE);
-            this.move(settings.speed * 1)
-        },
-        attackSword: function () {
-            callback(NAMES.ATTACK_SWORD, true);
-        },
-        move: function (distance) {
-            settings.x += distance;
-            callback(NAMES.MOVE, {x: settings.x, y: settings.y});
-        },
+        person.canDamage = false;
+        setTimeout(() => {
+            person.canDamage = true;
+        }, 1000);
+        mediator.callTrigger(TRIGGER.PLAYER_DAMAGE, _this.getPerson());
     }
+
+    this.damage = (data) => {
+        person.hp -= data.damage;
+        if(person.hp <= 0) {
+            person.isDead = true;
+            data.kills++;
+            let cb = {
+                done: function() {
+                    mediator.callTrigger(TRIGGER.DESTROY_ENEMY, _this.getPerson());
+                }
+            };
+            _this.setAnimation('die', cb)
+        }
+    }
+
+    function init() {
+
+        person.id = Math.floor(Math.random() * 100000) + 1;
+        animation.current.top = Math.floor(Math.random() * 20) + 1;
+
+        mediator.subscribe(TRIGGER.ELF_MOVE_LEFT, _this.moveLeft.bind(this))
+        mediator.subscribe(TRIGGER.ELF_MOVE_RIGHT, _this.moveRight.bind(this))
+        mediator.subscribe(TRIGGER.ELF_RUN, _this.run.bind(this))
+        mediator.subscribe(TRIGGER.ELF_IDLE, _this.idle.bind(this))
+    }
+    init();
 }
 
-// Пользовательский интерфейс
-app.GameUI = (function () {
-    let callback = false,
-        settings = {};
+function Greench(options) {
 
-    return {
-        init: function (cb) {
-            callback = cb;
+    const mediator = options.mediator;
+    const TRIGGER = mediator.getTriggerTypes();
+    const NAMES = mediator.getNames();
+    const _this = this;
 
-            $('body').on('click', '.attack1', this.onAttackSword.bind(this));
+    let person = {
+        id: 0,
+        damage: 10,
+        hp: 60,
+        maxHp: 60,
+        canDamage: true,
+        isDead: false,
+    };
+    let animation = {
+        run: {
+            url: '/animation/greench/run/',
+            postfix: '.png',
+            count: 20,
+            width: 452,
+            height: 587,
+            dheight: 300,
+            dwidth: 0,
         },
-        onAttackSword: function(e) {
-            callback(NAMES.ATTACK_SWORD, true)
+        die: {
+            url: '/animation/greench/die/',
+            postfix: '.png',
+            count: 20,
+            width: 730,
+            height: 629,
+            dheight: 300,
+            dwidth: 0,
         },
+        attack: {
+            url: '/animation/greench/attack/',
+            postfix: '.png',
+            count: 20,
+            width: 443,
+            height: 578,
+            dheight: 300,
+            dwidth: 0,
+        },
+        current: {
+            name: 'run',
+            number: 1,
+            left: 0,
+            top: 0,
+            direction: NAMES.DIRECTION_RIGHT,
+            callback: false,
+        }
     }
-})();
 
-// Запуск приложения
-Application.start();
+    this.getAnimation = () => {
+        return animation;
+    }
+    this.getPerson = () => {
+        return person;
+    }
+    this.isSceneObject = () => {
+        return true;
+    }
+    this.moveLeft = (data) => {
+        if(data === 1) {
+            _this.move(-10, NAMES.DIRECTION_LEFT)
+        } else {
+            _this.move(data, NAMES.DIRECTION_LEFT)
+        }
+    }
+    this.moveRight = (data) => {
+        if(data === 1) {
+            _this.move(10, NAMES.DIRECTION_RIGHT)
+        } else {
+            _this.move(data, NAMES.DIRECTION_RIGHT)
+        }
+    }
+    this.setPosition = (data, direction = false) => {
+        let c = animation.current;
+        c.left = data;
+        if(direction) {
+            c.direction = direction;
+        }
+        _this.setAnimation('run')
+    }
+    this.move = (data, direction = false) => {
+        let c = animation.current;
+
+        c.left += data;
+        if(direction) {
+            c.direction = direction;
+        }
+        _this.setAnimation('run')
+    }
+    this.run = (data) => {
+        _this.setAnimation('run')
+    }
+    this.setAnimation = (name, cb = false) => {
+
+        if(animation.current.name === name) {
+            return;
+        }
+
+        let c = animation.current;
+        c.name = name;
+        c.number = 1;
+        c.callback = cb;
+    }
+
+    this.moveToPurpose = (data) => {
+        let canvas = mediator.callTrigger(TRIGGER.GET_CANVAS_SETTINGS);
+        let cleft = canvas.canvasLeft;
+        if (!cleft) cleft = 0;
+
+        let purposeLeft = cleft + data.x;
+
+        let c = animation.current;
+        if(c.left < purposeLeft + 200 && c.left > purposeLeft - 50) {
+            this.purposeDamage();
+            return;
+        }
+        if(purposeLeft > c.left) {
+            this.moveRight(0.5);
+        } else if(purposeLeft < c.left) {
+            this.moveLeft(-0.5);
+        }
+    }
+
+    this.purposeDamage = () => {
+        if(!person.canDamage || person.isDead) return;
+
+        let cb = {
+            done: function() {
+                if(!person.canDamage || person.isDead) return;
+
+                _this.setAnimation('run')
+            }
+        };
+        this.setAnimation('attack', cb)
+
+        person.canDamage = false;
+        setTimeout(() => {
+            person.canDamage = true;
+        }, 1000);
+        mediator.callTrigger(TRIGGER.PLAYER_DAMAGE, _this.getPerson());
+    }
+
+    this.damage = (data) => {
+        person.hp -= data.damage;
+        if(person.hp <= 0) {
+            person.isDead = true;
+            data.kills++;
+            let cb = {
+                done: function() {
+                    mediator.callTrigger(TRIGGER.DESTROY_ENEMY, _this.getPerson());
+                }
+            };
+            _this.setAnimation('die', cb)
+        }
+    }
+
+    function init() {
+
+        person.id = Math.floor(Math.random() * 100000) + 1;
+        animation.current.top = Math.floor(Math.random() * 20) + 1;
+
+        mediator.subscribe(TRIGGER.GREENCH_MOVE_LEFT, _this.moveLeft.bind(this))
+        mediator.subscribe(TRIGGER.GREENCH_MOVE_RIGHT, _this.moveRight.bind(this))
+        mediator.subscribe(TRIGGER.GREENCH_RUN, _this.run.bind(this))
+    }
+    init();
+}
+
+function Background(options) {
+
+    const mediator = options.mediator;
+    const TRIGGER = mediator.getTriggerTypes();
+    const NAMES = mediator.getNames();
+    const _this = this;
+
+    let animation = {
+        idle: {
+            url: '/animation/bg/',
+            postfix: '.png',
+            count: 1,
+            width: 9000,
+            height: 1265,
+            dheight: 1265,
+            dwidth: 0,
+        },
+        current: {
+            name: 'idle',
+            number: 1,
+            left: 0,
+            direction: NAMES.DIRECTION_RIGHT,
+            callback: false,
+        }
+    }
+
+    this.getAnimation = () => {
+        let canvas = mediator.callTrigger(TRIGGER.GET_CANVAS_SETTINGS, 1);
+        animation.current.left = -canvas.canvasLeft;
+        return animation;
+    }
+    this.idle = (data) => {
+        _this.setAnimation('idle')
+    }
+    this.setAnimation = (name, cb = false) => {
+
+        if(animation.current.name === name) {
+            return;
+        }
+
+        let c = animation.current;
+        c.name = name;
+        c.number = 1;
+        c.callback = cb;
+    }
+
+    function init() {
+        let canvas = mediator.callTrigger(TRIGGER.GET_CANVAS_SETTINGS, 1);
+        animation.idle.height = canvas.canvasHeight;
+        animation.idle.dheight = canvas.canvasHeight;
+
+        mediator.subscribe(TRIGGER.BACKGROUND_IDLE, _this.idle.bind(this))
+    }
+    init();
+}
+
+
+function Ranking(options) {
+    const mediator = options.mediator;
+    const TRIGGER = mediator.getTriggerTypes();
+    const _this = this;
+
+
+    this.ranking = (data) => {
+        mediator.callTrigger(TRIGGER.TAB_CHANGE, '.screen-ranking')
+    }
+    function init() {
+        mediator.subscribe(TRIGGER.RANKING, _this.ranking.bind(this))
+
+    }
+    init();
+}
+function Timer(options) {
+    const mediator = options.mediator;
+    const TRIGGER = mediator.getTriggerTypes();
+    const _this = this;
+
+    let settings = {
+        time: 0,
+        ftime: '',
+        isRun: false,
+    }
+
+    this.start = (data) => {
+        settings.isRun = true;
+        this.update(data);
+    }
+    this.update = (data) => {
+        if(!settings.isRun) return;
+
+        settings.time++;
+        let t = this.getTime();
+        $('.timer-value').text(t);
+
+        setTimeout(() => {
+            _this.update(data);
+
+        }, 1000)
+    }
+    this.pause = (data) => {
+        settings.isRun = false;
+    }
+    this.stop = (data) => {
+        settings.isRun = false;
+        settings.time = 0;
+        settings.ftime = '';
+    }
+    this.getTime = (data) => {
+        let minutes = Math.floor(settings.time / 60);
+        let seconds = settings.time - minutes * 60;
+        if(minutes < 10) {
+            minutes = '0' + minutes;
+        }
+        if(seconds < 10) {
+            seconds = '0' + seconds;
+        }
+        return minutes + ':' + seconds;
+    }
+    function init() {
+
+        mediator.subscribe(TRIGGER.START_TIMER, _this.start.bind(this))
+        mediator.subscribe(TRIGGER.PAUSE_TIMER, _this.pause.bind(this))
+        mediator.subscribe(TRIGGER.STOP_TIMER, _this.stop.bind(this))
+
+    }
+    init();
+}
