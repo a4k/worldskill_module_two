@@ -250,6 +250,13 @@ function Player(options) {
         skill_active: false,
     };
 
+    let person = {
+        damage: 15,
+        hp: 100,
+        mp: 100,
+        maxHp: 100,
+        maxMp: 100,
+    }
     let animation = {
         idle: {
             url: '/animation/knight/idle/',
@@ -289,6 +296,9 @@ function Player(options) {
 
     this.getAnimation = () => {
         return animation;
+    }
+    this.getPerson = () => {
+        return person;
     }
     this.moveLeft = (data) => {
         if(data === 1) {
@@ -369,6 +379,14 @@ function Player(options) {
             settings.skill_active = true;
         }
     }
+    this.damage = (data) => {
+        person.hp -= data.damage;
+        let percent = Math.round(person.hp / person.maxHp * 100);
+
+        let hp = $('.panel-xp');
+        hp.find('span').text(person.hp);
+        hp.find('.score-value').css({width: percent + '%'});
+    }
 
     function init() {
         $('.user-info').html(username)
@@ -377,6 +395,7 @@ function Player(options) {
         mediator.subscribe(TRIGGER.MOVE_RIGHT, _this.moveRight.bind(this))
         mediator.subscribe(TRIGGER.ATTACK_ONE, _this.attackOne.bind(this))
         mediator.subscribe(TRIGGER.PLAYER_IDLE, _this.idle.bind(this))
+        mediator.subscribe(TRIGGER.PLAYER_DAMAGE, _this.damage.bind(this))
         mediator.subscribe(TRIGGER.GET_PLAYER_ANIMATION, _this.getAnimation.bind(this))
     }
     init();
@@ -480,6 +499,12 @@ function Dog(options) {
     const NAMES = mediator.getNames();
     const _this = this;
 
+    let person = {
+        damage: 2,
+        hp: 15,
+        maxHp: 15,
+        canDamage: true,
+    };
     let animation = {
         run: {
             url: '/animation/dog/run/',
@@ -502,6 +527,9 @@ function Dog(options) {
 
     this.getAnimation = () => {
         return animation;
+    }
+    this.getPerson = () => {
+        return person;
     }
     this.isSceneObject = () => {
         return true;
@@ -561,6 +589,7 @@ function Dog(options) {
 
         let c = animation.current;
         if(c.left < purposeLeft + 200 && c.left > purposeLeft - 50) {
+            this.purposeDamage();
             return;
         }
         if(purposeLeft > c.left) {
@@ -568,6 +597,16 @@ function Dog(options) {
         } else if(purposeLeft < c.left) {
             this.moveLeft(-0.5);
         }
+    }
+
+    this.purposeDamage = () => {
+        if(!person.canDamage) return;
+
+        person.canDamage = false;
+        setTimeout(() => {
+            person.canDamage = true;
+        }, 1000);
+        mediator.callTrigger(TRIGGER.PLAYER_DAMAGE, _this.getPerson());
     }
 
     function init() {
