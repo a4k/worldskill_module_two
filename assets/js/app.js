@@ -1,4 +1,5 @@
 const mediator = new Mediator({triggers: SETTINGS.TRIGGER, names: SETTINGS.NAMES});
+const timer = new Timer({mediator});
 const game = new Game({mediator});
 const ui = new UI({mediator});
 const app = new App({mediator});
@@ -53,6 +54,7 @@ function App(options) {
     this.register = (username) => {
         let obj = new Player({mediator, username});
         mediator.callTrigger(TRIGGER.START_GAME, true)
+        mediator.callTrigger(TRIGGER.START_TIMER, true)
         mediator.callTrigger(TRIGGER.ADD_OBJECT, obj)
 
     }
@@ -102,6 +104,7 @@ function Game(options) {
     }
     this.endGame = (data) => {
         isPower = false;
+        mediator.callTrigger(TRIGGER.STOP_TIMER, true)
         mediator.callTrigger(TRIGGER.RANKING, data)
     }
     this.updateScene = () => {
@@ -937,6 +940,61 @@ function Ranking(options) {
     }
     function init() {
         mediator.subscribe(TRIGGER.RANKING, _this.ranking.bind(this))
+
+    }
+    init();
+}
+function Timer(options) {
+    const mediator = options.mediator;
+    const TRIGGER = mediator.getTriggerTypes();
+    const _this = this;
+
+    let settings = {
+        time: 0,
+        ftime: '',
+        isRun: false,
+    }
+
+    this.start = (data) => {
+        settings.isRun = true;
+        this.update(data);
+    }
+    this.update = (data) => {
+        if(!settings.isRun) return;
+
+        settings.time++;
+        let t = this.getTime();
+        $('.timer-value').text(t);
+
+        setTimeout(() => {
+            _this.update(data);
+
+        }, 1000)
+    }
+    this.pause = (data) => {
+        settings.isRun = false;
+    }
+    this.stop = (data) => {
+        settings.isRun = false;
+        settings.time = 0;
+        settings.ftime = '';
+    }
+    this.getTime = (data) => {
+        let minutes = Math.floor(settings.time / 60);
+        let seconds = settings.time - minutes * 60;
+        if(minutes < 10) {
+            minutes = '0' + minutes;
+        }
+        if(seconds < 10) {
+            seconds = '0' + seconds;
+        }
+        return minutes + ':' + seconds;
+    }
+    function init() {
+
+        mediator.subscribe(TRIGGER.START_TIMER, _this.start.bind(this))
+        mediator.subscribe(TRIGGER.PAUSE_TIMER, _this.pause.bind(this))
+        mediator.subscribe(TRIGGER.STOP_TIMER, _this.stop.bind(this))
 
     }
     init();
